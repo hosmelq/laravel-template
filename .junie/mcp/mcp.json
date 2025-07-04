@@ -1,0 +1,20 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "/Users/hosmelq/Library/Application Support/Herd/bin/php84",
+            "args": [
+                "/Users/hosmelq/Code/laravel-template/artisan",
+                "boost:mcp"
+            ]
+        },
+        "herd": {
+            "command": "/Users/hosmelq/Library/Application Support/Herd/bin/php84",
+            "args": [
+                "/Applications/Herd.app/Contents/Resources/herd-mcp.phar"
+            ],
+            "env": {
+                "SITE_PATH": "/Users/hosmelq/Code/laravel-template"
+            }
+        }
+    }
+}
