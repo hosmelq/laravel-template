@@ -1,0 +1,8 @@
+name: autofix.ci
+
+on:
+  pull_request:
+
+jobs:
+  autofix:
+    uses: hosmelq/.github/.github/workflows/php-autofix.yml@main

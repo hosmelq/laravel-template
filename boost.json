@@ -1,0 +1,17 @@
+{
+    "agents": [
+        "codex",
+        "opencode"
+    ],
+    "guidelines": true,
+    "herd_mcp": true,
+    "mcp": true,
+    "packages": [
+        "laravel/fortify"
+    ],
+    "sail": false,
+    "skills": [
+        "pest-testing",
+        "developing-with-fortify"
+    ]
+}

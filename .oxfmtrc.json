@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "bracketSpacing": false,
+  "experimentalSortImports": {
+    "groups": [
+      ["side-effect-style"],
+      ["builtin"],
+      ["external"],
+      ["internal"],
+      ["parent", "sibling", "index"],
+      ["ts-equals-import"],
+      ["unknown"]
+    ],
+    "internalPattern": ["#/"]
+  },
+  "ignorePatterns": [
+    "*.css",
+    "*.json",
+    "*.yml",
+    ".agents",
+    ".prettierrc",
+    "AGENTS.md",
+    "boost.json",
+    "opencode.json",
+    "storage"
+  ],
+  "semi": false,
+  "singleQuote": true
+}
