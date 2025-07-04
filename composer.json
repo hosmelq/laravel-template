@@ -1,0 +1,119 @@
+{
+  "name": "laravel/laravel",
+  "description": "The skeleton application for the Laravel framework.",
+  "license": "MIT",
+  "type": "project",
+  "keywords": [
+    "laravel",
+    "framework"
+  ],
+  "authors": [
+    {
+      "name": "Hosmel Quintana",
+      "email": "hosmelq@gmail.com"
+    }
+  ],
+  "require": {
+    "php": "^8.5",
+    "archtechx/enums": "^1.1.2",
+    "hosmelq/name-of-person": "^0.3.0",
+    "intervention/image": "^3.11.6",
+    "laravel/fortify": "^1.34.1",
+    "laravel/framework": "^12.52",
+    "laravel/tinker": "^2.11.1",
+    "propaganistas/laravel-disposable-email": "^2.4.23",
+    "sentry/sentry-laravel": "^4.20.1",
+    "spatie/laravel-medialibrary": "^11.20.0",
+    "thecodingmachine/safe": "^3.4"
+  },
+  "require-dev": {
+    "driftingly/rector-laravel": "^2.1.9",
+    "ergebnis/composer-normalize": "^2.50",
+    "fakerphp/faker": "^1.24.1",
+    "fruitcake/laravel-debugbar": "^4.0.9",
+    "larastan/larastan": "^3.9.2",
+    "laravel/boost": "^2.1.7",
+    "laravel/pail": "^1.2.6",
+    "laravel/pint": "^1.27.1",
+    "mockery/mockery": "^1.6.12",
+    "nunomaduro/collision": "^8.9.1",
+    "pestphp/pest": "^4.4.1",
+    "pestphp/pest-plugin-laravel": "^4.0",
+    "phpstan/extension-installer": "^1.4.3",
+    "phpstan/phpstan-deprecation-rules": "^2.0.4",
+    "phpstan/phpstan-strict-rules": "^2.0.10",
+    "rector/rector": "^2.3.6",
+    "rector/type-perfect": "^2.1.2",
+    "shipmonk/composer-dependency-analyser": "^1.8.4",
+    "spaze/phpstan-disallowed-calls": "^4.8",
+    "thecodingmachine/phpstan-safe-rule": "^1.4.3",
+    "ticketswap/phpstan-error-formatter": "^1.2.4",
+    "tomasvotruba/type-coverage": "^2.1"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true,
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/",
+      "Database\\Factories\\": "database/factories/",
+      "Database\\Seeders\\": "database/seeders/"
+    },
+    "files": [
+      "app/functions.php"
+    ]
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "allow-plugins": {
+      "ergebnis/composer-normalize": true,
+      "pestphp/pest-plugin": true,
+      "php-http/discovery": true,
+      "phpstan/extension-installer": true
+    },
+    "optimize-autoloader": true,
+    "preferred-install": "dist",
+    "sort-packages": true
+  },
+  "extra": {
+    "laravel": {
+      "dont-discover": []
+    }
+  },
+  "scripts": {
+    "post-update-cmd": [
+      "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
+      "@composer bump",
+      "@composer normalize",
+      "@php artisan boost:update --ansi"
+    ],
+    "post-autoload-dump": [
+      "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+      "@php artisan package:discover --ansi"
+    ],
+    "post-root-package-install": [
+      "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+    ],
+    "post-create-project-cmd": [
+      "@php artisan key:generate --ansi",
+      "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+      "@php artisan migrate --graceful --ansi"
+    ],
+    "fresh": "@php artisan migrate:fresh --seed",
+    "phpstan": "phpstan analyse --memory-limit=4G",
+    "pint": "pint",
+    "rector": "rector",
+    "test": "@php artisan test"
+  },
+  "scripts-descriptions": {
+    "fresh": "Runs migrate:fresh and db:seed.",
+    "phpstan": "Runs PHPStan analyse.",
+    "pint": "Run pint.",
+    "rector": "Runs Rector.",
+    "test": "Run the application tests."
+  },
+  "$schema": "https://getcomposer.org/schema.json"
+}

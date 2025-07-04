@@ -1,0 +1,56 @@
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: true
+
+  jobs:
+    - name: Frontend
+      group:
+        piped: true
+        jobs:
+          - name: Oxfmt (format)
+            glob: '**/*.{md,toml,ts,tsx,yaml,yml}'
+            run: bun run fmt:oxfmt --no-error-on-unmatched-pattern {staged_files}
+            stage_fixed: true
+
+          - name: Oxlint (fix)
+            glob: '**/*.{js,cjs,ts,tsx}'
+            run: bun run fix {staged_files}
+            stage_fixed: true
+
+          - name: Prettier (format)
+            glob: '**/*.{css,json}'
+            run: bun run fmt:prettier --write {staged_files}
+            stage_fixed: true
+
+    - name: Backend
+      group:
+        piped: true
+        jobs:
+          - name: Rector (fix)
+            glob: '**/*.php'
+            exclude:
+              - '**/*.blade.php'
+            run: composer rector -- {staged_files}
+            stage_fixed: true
+
+          - name: Pint (fix)
+            glob: '**/*.php'
+            exclude:
+              - '**/*.blade.php'
+            run: composer pint -- {staged_files}
+            stage_fixed: true
+
+          - name: PHPStan
+            glob: '**/*.php'
+            exclude:
+              - '**/*.blade.php'
+              - 'tests/**'
+            run: composer phpstan -- {staged_files}
+
+pre-push:
+  parallel: true
+
+  jobs:
+    - name: PHPStan
+      run: composer phpstan

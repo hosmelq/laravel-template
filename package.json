@@ -1,0 +1,19 @@
+{
+  "name": "template",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "fix": "oxlint --fix --fix-dangerously --fix-suggestions",
+    "fmt": "bun run fmt:oxfmt && bun run fmt:prettier",
+    "fmt:oxfmt": "oxfmt",
+    "fmt:prettier": "prettier --write \"**/*.{css,json}\"",
+    "lint": "oxlint"
+  },
+  "devDependencies": {
+    "lefthook": "^2.1.1",
+    "oxfmt": "^0.33.0",
+    "oxlint": "^1.48.0",
+    "prettier": "^3.8.1"
+  }
+}

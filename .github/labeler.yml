@@ -1,0 +1,7 @@
+.env:
+  - changed-files:
+      - any-glob-to-any-file: [.env.example, .env.production.encrypted, .env.testing.example]
+
+migrations:
+  - changed-files:
+      - any-glob-to-any-file: database/migrations/**
