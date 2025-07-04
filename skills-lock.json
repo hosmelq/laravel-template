@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "gh-address-comments": {
+      "source": "openai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/.curated/gh-address-comments/SKILL.md",
+      "computedHash": "0a480d4fe8deb31852cd47ec8708e66b66b94875a23ba7679b17cf11ae9255a0"
+    },
+    "gh-fix-ci": {
+      "source": "openai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/.curated/gh-fix-ci/SKILL.md",
+      "computedHash": "1b1ce4eeeae2bfc175d05f1b69e07b17dfa1fddf99a96c22b6dcae7e5fb4e550"
+    },
+    "laravel-project-patterns": {
+      "source": "hosmelq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/laravel-project-patterns/SKILL.md",
+      "computedHash": "7bab333311e50428b84f4733c324b46dc8401562ece632d33ed9b4b5092ac504"
+    },
+    "sentry": {
+      "source": "openai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/.curated/sentry/SKILL.md",
+      "computedHash": "ac32ffd194fee6dfc777e8d16b85ea7f9c5975cf4c7488d2616dc3e5dfa07386"
+    },
+    "use-railway": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/railway/skills/use-railway/SKILL.md",
+      "computedHash": "e6d2e37d3cdb0632b1abbf208f329e6521bdc12c0ec165199870e71d95d1467f"
+    }
+  }
+}

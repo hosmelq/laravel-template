@@ -1,0 +1,10 @@
+allowBuilds:
+  '@sentry/cli': true
+  lefthook: true
+
+publicHoistPattern:
+  - '@heroui/*'
+  - '@inertiajs/*'
+  - '@internationalized/date'
+  - '@react-types/*'
+  - react-aria-components

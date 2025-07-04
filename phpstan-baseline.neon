@@ -1,0 +1,40 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Parameter \#1 \$input \(array\<string, string\>\) of method App\\Actions\\Fortify\\CreateNewUser\:\:create\(\) should be contravariant with parameter \$input \(array\) of method Laravel\\Fortify\\Contracts\\CreatesNewUsers\:\:create\(\)$#'
+			identifier: method.childParameterType
+			count: 1
+			path: app/Actions/Fortify/CreateNewUser.php
+
+		-
+			message: '''
+				#^Return type of method App\\Actions\\Fortify\\CreateNewUser\:\:passwordRules\(\) has typehint with deprecated interface Illuminate\\Contracts\\Validation\\Rule\:
+				see ValidationRule$#
+			'''
+			identifier: return.deprecatedInterface
+			count: 1
+			path: app/Actions/Fortify/CreateNewUser.php
+
+		-
+			message: '''
+				#^Return type of method App\\Actions\\Fortify\\ResetUserPassword\:\:passwordRules\(\) has typehint with deprecated interface Illuminate\\Contracts\\Validation\\Rule\:
+				see ValidationRule$#
+			'''
+			identifier: return.deprecatedInterface
+			count: 1
+			path: app/Actions/Fortify/ResetUserPassword.php
+
+		-
+			message: '''
+				#^Return type of method App\\Actions\\Fortify\\UpdateUserPassword\:\:passwordRules\(\) has typehint with deprecated interface Illuminate\\Contracts\\Validation\\Rule\:
+				see ValidationRule$#
+			'''
+			identifier: return.deprecatedInterface
+			count: 1
+			path: app/Actions/Fortify/UpdateUserPassword.php
+
+		-
+			message: '#^Dynamic call to static method Illuminate\\Foundation\\Application\:\:isProduction\(\)\.$#'
+			identifier: staticMethod.dynamicCall
+			count: 2
+			path: app/Providers/AppServiceProvider.php

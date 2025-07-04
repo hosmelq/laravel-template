@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "target": "ES2022",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "types": ["vite/client"],
+    "useDefineForClassFields": true,
+
+    /* Bundler mode */
+    "allowImportingTsExtensions": false,
+    "jsx": "react-jsx",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+
+    /* Linting */
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true,
+
+    /* Custom */
+    "allowJs": false,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "#/*": ["./resources/js/*"]
+    },
+    "strictNullChecks": true
+  },
+  "exclude": ["resources/js/actions/Fruitcake"],
+  "include": ["resources/js"]
+}
