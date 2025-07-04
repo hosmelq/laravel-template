@@ -1,0 +1,29 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "automerge": true,
+  "enabledManagers": ["composer", "github-actions", "npm"],
+  "extends": ["config:recommended", "schedule:weekly"],
+  "labels": ["dependencies"],
+  "major": {
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "addLabels": ["composer"],
+      "groupName": "Composer",
+      "matchManagers": ["composer"]
+    },
+    {
+      "addLabels": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "matchManagers": ["github-actions"]
+    },
+    {
+      "addLabels": ["npm"],
+      "groupName": "NPM",
+      "matchManagers": ["npm"]
+    }
+  ],
+  "rangeStrategy": "update-lockfile",
+  "rebaseWhen": "conflicted"
+}
