@@ -25,3 +25,4 @@ Thumbs.db
 
 .DS_Store
 .env.testing
+resources/js/types/ziggy.d.ts

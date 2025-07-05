@@ -1,0 +1,6 @@
+onlyBuiltDependencies:
+  - '@heroui/shared-utils'
+  - '@sentry/cli'
+  - '@swc/core'
+  - '@tailwindcss/oxide'
+  - esbuild
