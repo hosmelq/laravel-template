@@ -5,10 +5,11 @@ declare(strict_types=1);
 use ShipMonk\ComposerDependencyAnalyser\Config\Configuration;
 use ShipMonk\ComposerDependencyAnalyser\Config\ErrorType;
 
-return (new Configuration())
+return new Configuration()
     ->ignoreErrors([ErrorType::SHADOW_DEPENDENCY])
     ->ignoreErrorsOnPackages([
         'archtechx/enums',
         'laravel/tinker',
         'thecodingmachine/safe',
+        'tightenco/ziggy',
     ], [ErrorType::UNUSED_DEPENDENCY]);
