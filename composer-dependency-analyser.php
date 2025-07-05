@@ -8,8 +8,9 @@ use ShipMonk\ComposerDependencyAnalyser\Config\ErrorType;
 return new Configuration()
     ->ignoreErrors([ErrorType::SHADOW_DEPENDENCY])
     ->ignoreErrorsOnPackages([
-        'archtechx/enums',
+        'inertiaui/modal',
         'laravel/tinker',
+        'laravel/wayfinder',
         'propaganistas/laravel-disposable-email',
         'thecodingmachine/safe',
     ], [ErrorType::UNUSED_DEPENDENCY]);

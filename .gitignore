@@ -24,3 +24,6 @@ Homestead.yaml
 Thumbs.db
 
 .env.testing
+resources/js/actions
+resources/js/routes
+resources/js/wayfinder

@@ -1,5 +1,8 @@
 [env]
 file = false
 
+[install]
+publicHoistPattern = ["@heroui/*", "@inertiajs/*", "@react-types/*"]
+
 [run]
 bun = true

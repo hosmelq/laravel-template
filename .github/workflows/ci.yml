@@ -3,8 +3,8 @@ name: Continuous integration
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, inertia-react]
 
 jobs:
   ci:
-    uses: hosmelq/.github/.github/workflows/php-ci.yml@main
+    uses: hosmelq/.github/.github/workflows/js-php-ci.yml@main

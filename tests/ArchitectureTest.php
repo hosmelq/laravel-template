@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Providers\TestingServiceProvider;
+
 arch()->preset()->php();
-arch()->preset()->laravel();
+arch()->preset()->laravel()->ignoring(TestingServiceProvider::class);
 arch()->preset()->security()->ignoring('assert');
 
 arch('annotations')
