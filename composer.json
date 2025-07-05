@@ -16,10 +16,12 @@
   "require": {
     "php": "^8.4",
     "archtechx/enums": "^1.1",
+    "inertiajs/inertia-laravel": "^2.0",
     "intervention/image": "^3.11",
     "laravel/fortify": "^1.30",
     "laravel/framework": "^12.22",
     "laravel/tinker": "^2.10",
+    "laravel/wayfinder": "^0.1",
     "propaganistas/laravel-disposable-email": "^2.4",
     "sentry/sentry-laravel": "^4.15",
     "spatie/laravel-medialibrary": "^11.13",
@@ -99,14 +101,16 @@
     "phpstan": "phpstan analyse --memory-limit=4G",
     "pint": "pint",
     "rector": "rector",
-    "test": "@php artisan test"
+    "test": "@php artisan test",
+    "wayfinder": "@php artisan wayfinder:generate --path=resources/js"
   },
   "scripts-descriptions": {
     "fresh": "Runs migrate:fresh and db:seed.",
     "phpstan": "Runs PHPStan analyse.",
     "pint": "Run pint.",
     "rector": "Runs Rector.",
-    "test": "Run the application tests."
+    "test": "Run the application tests.",
+    "wayfinder": "Generate TypeScript definitions for routes and controller methods."
   },
   "$schema": "https://getcomposer.org/schema.json"
 }

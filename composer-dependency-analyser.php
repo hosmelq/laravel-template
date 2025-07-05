@@ -10,6 +10,7 @@ return new Configuration()
     ->ignoreErrorsOnPackages([
         'archtechx/enums',
         'laravel/tinker',
+        'laravel/wayfinder',
         'propaganistas/laravel-disposable-email',
         'thecodingmachine/safe',
     ], [ErrorType::UNUSED_DEPENDENCY]);

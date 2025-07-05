@@ -25,3 +25,6 @@ Thumbs.db
 
 .DS_Store
 .env.testing
+resources/js/actions
+resources/js/routes
+resources/js/wayfinder

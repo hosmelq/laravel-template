@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\App;
@@ -32,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         $this->configurePasswordValidation();
         $this->configureRateLimiters();
         $this->configureResources();
+        $this->configureRouteMacros();
         $this->configureVite();
     }
 
@@ -99,6 +101,26 @@ class AppServiceProvider extends ServiceProvider
     private function configureResources(): void
     {
         JsonResource::withoutWrapping();
+    }
+
+    /**
+     * Configure route macros.
+     */
+    private function configureRouteMacros(): void
+    {
+        RedirectResponse::macro('toast', function (
+            string $title,
+            null|string $description = null,
+            null|string $color = 'success',
+            null|int $timeout = 5000
+        ): RedirectResponse {
+            return $this->with('toast', array_filter([
+                'color' => $color,
+                'description' => $description,
+                'timeout' => $timeout,
+                'title' => $title,
+            ], fn (null|int|string $value): bool => ! is_null($value)));
+        });
     }
 
     /**
