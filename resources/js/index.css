@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+@plugin 'tailwindcss-react-aria-components';
+
+@source '../views';
+
+@custom-variant dark (&:is(.dark *));

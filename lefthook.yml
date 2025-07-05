@@ -52,5 +52,8 @@ pre-push:
   parallel: true
 
   jobs:
+    - name: tsgo
+      run: bunx tsgo -b
+
     - name: PHPStan
       run: composer phpstan

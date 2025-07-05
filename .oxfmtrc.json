@@ -13,6 +13,10 @@
     ],
     "internalPattern": ["#/"]
   },
+  "experimentalTailwindcss": {
+    "functions": ["cn"],
+    "stylesheet": "./resources/js/index.css"
+  },
   "ignorePatterns": [
     "*.css",
     "*.json",
