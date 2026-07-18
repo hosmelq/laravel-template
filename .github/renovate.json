@@ -1,14 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "dependencyDashboard": true,
-  "enabledManagers": ["composer", "github-actions", "npm"],
+  "enabledManagers": ["composer", "github-actions"],
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "includePaths": [
     ".github/workflows/**",
     "composer.json",
-    "composer.lock",
-    "package.json",
-    "pnpm-lock.yaml"
+    "composer.lock"
   ],
   "packageRules": [
     {
@@ -22,8 +20,8 @@
       "matchManagers": ["composer"]
     },
     {
-      "groupName": "composer and npm dependencies",
-      "matchManagers": ["composer", "npm"],
+      "groupName": "composer dependencies",
+      "matchManagers": ["composer"],
       "postUpdateOptions": ["composerWithAll"],
       "rangeStrategy": "bump"
     },

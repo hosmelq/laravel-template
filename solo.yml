@@ -15,11 +15,3 @@ processes:
     auto_restart: true
     auto_start: true
     command: php artisan schedule:work --whisper
-  'nub: build':
-    auto_restart: false
-    auto_start: false
-    command: nub run build
-  'nub: dev':
-    auto_restart: true
-    auto_start: true
-    command: nub run dev

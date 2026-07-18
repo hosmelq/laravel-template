@@ -1,0 +1,1333 @@
+diff -ruN a/.github/renovate.json b/.github/renovate.json
+--- a/.github/renovate.json	2026-07-18 06:31:34
++++ b/.github/renovate.json	2026-07-17 23:35:13
+@@ -1,12 +1,14 @@
+ {
+   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+   "dependencyDashboard": true,
+-  "enabledManagers": ["composer", "github-actions"],
++  "enabledManagers": ["composer", "github-actions", "npm"],
+   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+   "includePaths": [
+     ".github/workflows/**",
+     "composer.json",
+-    "composer.lock"
++    "composer.lock",
++    "package.json",
++    "pnpm-lock.yaml"
+   ],
+   "packageRules": [
+     {
+@@ -20,8 +22,8 @@
+       "matchManagers": ["composer"]
+     },
+     {
+-      "groupName": "composer dependencies",
+-      "matchManagers": ["composer"],
++      "groupName": "composer and npm dependencies",
++      "matchManagers": ["composer", "npm"],
+       "postUpdateOptions": ["composerWithAll"],
+       "rangeStrategy": "bump"
+     },
+diff -ruN a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml	2026-07-18 06:31:34
++++ b/.github/workflows/ci.yml	2026-07-17 23:35:13
+@@ -108,6 +108,17 @@
+         with:
+           persist-credentials: false
+ 
++      - name: Install npm dependencies
++        uses: hosmelq/.github/.github/actions/npm-install@0e629f62b840abf1d0d07479e6efa99567293001
++        with:
++          node-version: '24'
++
++      - name: Check JavaScript lint
++        run: nub run lint
++
++      - name: Check JavaScript format
++        run: nub run fmt:check
++
+       - name: Check PHP code style
+         uses: hosmelq/.github/.github/actions/php-pint-check@0e629f62b840abf1d0d07479e6efa99567293001
+         with:
+@@ -137,8 +148,8 @@
+           php-tools: ''
+           php-version: '8.5'
+ 
+-  tests:
+-    name: Tests (Shard ${{ matrix.shard }}/4)
++  frontend-build:
++    name: Frontend build
+ 
+     runs-on: ubuntu-latest
+ 
+@@ -150,6 +161,44 @@
+       - check-unused-composer-dependencies
+       - php-dependencies
+ 
++    steps:
++      - name: Checkout
++        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
++        with:
++          persist-credentials: false
++
++      - name: Prepare composer dependencies
++        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
++        with:
++          artifact-mode: download
++          artifact-name: php-vendor
++          php-tools: ''
++          php-version: '8.5'
++
++      - name: Install npm dependencies
++        uses: hosmelq/.github/.github/actions/npm-install@0e629f62b840abf1d0d07479e6efa99567293001
++        with:
++          node-version: '24'
++
++      - name: Build frontend
++        run: nub run build
++
++      - name: Upload frontend artifact
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
++        with:
++          name: frontend-build
++          if-no-files-found: error
++          path: |
++            public/build
++          retention-days: 1
++
++  tests:
++    name: Tests (Shard ${{ matrix.shard }}/4)
++
++    runs-on: ubuntu-latest
++
++    needs: [frontend-build, php-dependencies]
++
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -177,6 +226,12 @@
+           artifact-name: php-vendor
+           php-tools: ''
+           php-version: '8.5'
++
++      - name: Download frontend artifact
++        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
++        with:
++          name: frontend-build
++          path: .
+ 
+       - name: Setup problem matchers
+         run: |
+diff -ruN a/.node-version b/.node-version
+--- a/.node-version	1969-12-31 18:00:00
++++ b/.node-version	2026-07-17 23:35:13
+@@ -0,0 +1 @@
++24
+diff -ruN a/.oxfmtrc.json b/.oxfmtrc.json
+--- a/.oxfmtrc.json	1969-12-31 18:00:00
++++ b/.oxfmtrc.json	2026-07-17 23:35:13
+@@ -0,0 +1,31 @@
++{
++  "$schema": "./node_modules/oxfmt/configuration_schema.json",
++  "bracketSpacing": false,
++  "ignorePatterns": [
++    "AGENTS.md",
++    "boost.json",
++    "opencode.json",
++    "resources/react-email/.react-email",
++    "storage",
++    "tests/.pest/shards.json"
++  ],
++  "semi": false,
++  "singleQuote": true,
++  "sortImports": {
++    "groups": [
++      ["builtin"],
++      ["external"],
++      ["internal"],
++      ["parent", "sibling", "index"],
++      ["unknown"]
++    ],
++    "internalPattern": ["#/"]
++  },
++  "sortPackageJson": {
++    "sortScripts": true
++  },
++  "sortTailwindcss": {
++    "functions": ["cn"],
++    "stylesheet": "./resources/js/index.css"
++  }
++}
+diff -ruN a/.oxlintrc.json b/.oxlintrc.json
+--- a/.oxlintrc.json	1969-12-31 18:00:00
++++ b/.oxlintrc.json	2026-07-17 23:35:13
+@@ -0,0 +1,12 @@
++{
++  "$schema": "./node_modules/oxlint/configuration_schema.json",
++  "options": {
++    "reportUnusedDisableDirectives": "error",
++    "typeAware": true,
++    "typeCheck": true
++  },
++  "plugins": ["eslint", "import", "jsx-a11y", "oxc", "promise", "react", "typescript", "unicorn"],
++  "rules": {
++    "import/no-cycle": "error"
++  }
++}
+diff -ruN a/app/Enums/FlashKey.php b/app/Enums/FlashKey.php
+--- a/app/Enums/FlashKey.php	1969-12-31 18:00:00
++++ b/app/Enums/FlashKey.php	2026-07-17 23:35:13
+@@ -0,0 +1,19 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums;
++
++use ArchTech\Enums\InvokableCases;
++use ArchTech\Enums\Values;
++
++/**
++ * @method static string Toast()
++ */
++enum FlashKey: string
++{
++    use InvokableCases;
++    use Values;
++
++    case Toast = 'toast';
++}
+diff -ruN a/app/Enums/ToastVariant.php b/app/Enums/ToastVariant.php
+--- a/app/Enums/ToastVariant.php	1969-12-31 18:00:00
++++ b/app/Enums/ToastVariant.php	2026-07-17 23:35:13
+@@ -0,0 +1,18 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums;
++
++use ArchTech\Enums\Values;
++
++enum ToastVariant: string
++{
++    use Values;
++
++    case Accent = 'accent';
++    case Danger = 'danger';
++    case Default = 'default';
++    case Success = 'success';
++    case Warning = 'warning';
++}
+diff -ruN a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/HandleInertiaRequests.php
+--- a/app/Http/Middleware/HandleInertiaRequests.php	1969-12-31 18:00:00
++++ b/app/Http/Middleware/HandleInertiaRequests.php	2026-07-17 23:35:13
+@@ -0,0 +1,34 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Middleware;
++
++use Illuminate\Http\Request;
++use Illuminate\Http\Resources\Json\JsonResource;
++use Inertia\Middleware;
++use Override;
++
++class HandleInertiaRequests extends Middleware
++{
++    #[Override]
++    public function share(Request $request): array
++    {
++        return [
++            ...parent::share($request),
++            'auth' => $this->authProperties($request),
++        ];
++    }
++
++    /**
++     * @return array{user: null|JsonResource}
++     */
++    private function authProperties(Request $request): array
++    {
++        $user = $request->user();
++
++        return [
++            'user' => $user?->toResource(),
++        ];
++    }
++}
+diff -ruN a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResource.php
+--- a/app/Http/Resources/UserResource.php	1969-12-31 18:00:00
++++ b/app/Http/Resources/UserResource.php	2026-07-17 23:35:13
+@@ -0,0 +1,39 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Resources;
++
++use App\Models\User;
++use Illuminate\Http\Request;
++use Illuminate\Http\Resources\Json\JsonResource;
++use Illuminate\Support\Str;
++use Override;
++
++/**
++ * @property User $resource
++ */
++class UserResource extends JsonResource
++{
++    /**
++     * @return array<string, mixed>
++     */
++    #[Override]
++    public function toArray(Request $request): array
++    {
++        return [
++            'avatar_url' => sprintf(
++                'https://www.gravatar.com/avatar/%s?d=mp',
++                Str::of($this->resource->email)->trim()->lower()->hash('sha256')
++            ),
++            'created_at' => $this->resource->created_at,
++            'email' => $this->resource->email,
++            'first_name' => $this->resource->first_name,
++            'id' => $this->resource->id,
++            'is_email_verified' => $this->resource->email_verified_at !== null,
++            'last_name' => $this->resource->last_name,
++            'name' => $this->resource->name,
++            'updated_at' => $this->resource->updated_at,
++        ];
++    }
++}
+diff -ruN a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
+--- a/app/Providers/AppServiceProvider.php	2026-07-18 00:00:00
++++ b/app/Providers/AppServiceProvider.php	2026-07-18 00:00:00
+@@ -5,3 +5,5 @@
+ namespace App\Providers;
+ 
++use App\Enums\FlashKey;
++use App\Enums\ToastVariant;
+ use App\Models\User;
+@@ -12,2 +14,3 @@
+ use Illuminate\Foundation\Http\FormRequest;
++use Illuminate\Http\RedirectResponse;
+ use Illuminate\Http\Request;
+@@ -17,2 +20,3 @@
+ use Illuminate\Support\Facades\URL;
++use Illuminate\Support\Facades\Vite;
+ use Illuminate\Support\ServiceProvider;
+@@ -20,2 +24,3 @@
+ use Illuminate\Validation\Rules\Password;
++use Inertia\Inertia;
+ use Sentry\Laravel\Integration;
+@@ -32,3 +37,5 @@
+         $this->configureResources();
++        $this->configureRouteMacros();
+         $this->configureUrls();
++        $this->configureVite();
+     }
+@@ -87,10 +94,34 @@
+     private function configureResources(): void
+     {
+         JsonResource::withoutWrapping();
+     }
+ 
++    private function configureRouteMacros(): void
++    {
++        RedirectResponse::macro('toast', function (
++            string $title,
++            null|string $description = null,
++            ToastVariant $variant = ToastVariant::Success,
++            int $timeout = 5
++        ): RedirectResponse {
++            Inertia::flash(FlashKey::Toast(), array_filter([
++                'description' => $description,
++                'timeout' => $timeout * 1000,
++                'title' => $title,
++                'variant' => $variant->value,
++            ], fn (null|int|string $value): bool => $value !== null));
++
++            return $this;
++        });
++    }
++
+     private function configureUrls(): void
+     {
+         URL::forceHttps(! $this->app->environment('local', 'testing'));
+     }
++
++    private function configureVite(): void
++    {
++        Vite::prefetch(concurrency: 3);
++    }
+ }
+diff -ruN a/app/Providers/TypeScriptTransformerServiceProvider.php b/app/Providers/TypeScriptTransformerServiceProvider.php
+--- a/app/Providers/TypeScriptTransformerServiceProvider.php	1969-12-31 18:00:00
++++ b/app/Providers/TypeScriptTransformerServiceProvider.php	2026-07-17 23:35:13
+@@ -0,0 +1,25 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Providers;
++
++use Spatie\LaravelTypeScriptTransformer\TypeScriptTransformerApplicationServiceProvider as BaseTypeScriptTransformerServiceProvider;
++use Spatie\TypeScriptTransformer\Transformers\EnumTransformer;
++use Spatie\TypeScriptTransformer\TypeScriptTransformerConfigFactory;
++use Spatie\TypeScriptTransformer\Writers\FlatModuleWriter;
++
++class TypeScriptTransformerServiceProvider extends BaseTypeScriptTransformerServiceProvider
++{
++    /**
++     * Generate PHP enums as TypeScript union types for the frontend.
++     */
++    protected function configure(TypeScriptTransformerConfigFactory $config): void
++    {
++        $config
++            ->transformer(EnumTransformer::class)
++            ->transformDirectories(app_path('Enums'))
++            ->outputDirectory(resource_path('js/types'))
++            ->writer(new FlatModuleWriter('generated/enums.ts'));
++    }
++}
+diff -ruN a/app/functions.php b/app/functions.php
+--- a/app/functions.php	2026-07-18 06:29:28
++++ b/app/functions.php	2026-07-17 23:35:13
+@@ -4,6 +4,10 @@
+ 
+ namespace App;
+ 
++use App\Enums\FlashKey;
++use App\Enums\ToastVariant;
++use Inertia\Inertia;
++
+ /**
+  * Wraps Laravel's translation helper so the return type stays narrowed to string.
+  *
+@@ -16,4 +20,18 @@
+     assert(is_string($message));
+ 
+     return $message;
++}
++
++function toast(
++    string $title,
++    null|string $description = null,
++    ToastVariant $variant = ToastVariant::Success,
++    int $timeout = 5
++): void {
++    Inertia::flash(FlashKey::Toast(), array_filter([
++        'description' => $description,
++        'timeout' => $timeout * 1000,
++        'title' => $title,
++        'variant' => $variant->value,
++    ], fn (null|int|string $value): bool => $value !== null));
+ }
+diff -ruN a/boost.json b/boost.json
+--- a/boost.json	2026-07-18 00:00:00
++++ b/boost.json	2026-07-18 00:00:00
+@@ -9 +9,2 @@
+     "packages": [
++        "inertiaui/modal",
+@@ -14,2 +15,6 @@
+         "laravel-best-practices",
++        "wayfinder-development",
+         "pest-testing",
++        "inertia-react-development",
++        "tailwindcss-development",
++        "inertia-modal-development",
+diff -ruN a/bootstrap/app.php b/bootstrap/app.php
+--- a/bootstrap/app.php	2026-07-18 06:29:28
++++ b/bootstrap/app.php	2026-07-18 06:25:21
+@@ -2,6 +2,7 @@
+ 
+ declare(strict_types=1);
+ 
++use App\Http\Middleware\HandleInertiaRequests;
+ use Illuminate\Foundation\Application;
+ use Illuminate\Foundation\Configuration\Exceptions;
+ use Illuminate\Foundation\Configuration\Middleware;
+@@ -16,6 +17,9 @@
+         $middleware
+             ->redirectUsersTo('/')
+-            ->throttleApi();
++            ->throttleApi()
++            ->web(append: [
++                HandleInertiaRequests::class,
++            ]);
+     })
+     ->withExceptions(function (Exceptions $exceptions): void {
+         Integration::handles($exceptions);
+diff -ruN a/bootstrap/providers.php b/bootstrap/providers.php
+--- a/bootstrap/providers.php	2026-07-18 00:00:00
++++ b/bootstrap/providers.php	2026-07-18 00:00:00
+@@ -5 +5,2 @@
+ use App\Providers\AppServiceProvider;
++use App\Providers\TypeScriptTransformerServiceProvider;
+@@ -8 +9,2 @@
+     AppServiceProvider::class,
++    TypeScriptTransformerServiceProvider::class,
+diff -ruN a/composer.json b/composer.json
+--- a/composer.json	2026-07-18 00:00:00
++++ b/composer.json	2026-07-18 00:00:00
+@@ -19 +19,3 @@
+     "hosmelq/name-of-person": "^0.3.0",
++    "inertiajs/inertia-laravel": "^3.1.1",
++    "inertiaui/modal": "^3.1.2",
+@@ -21 +23,2 @@
+     "laravel/tinker": "^3.0.2",
++    "laravel/wayfinder": "^0.1.20",
+@@ -24 +27,2 @@
++    "spatie/laravel-typescript-transformer": "^3.3.0",
+     "thecodingmachine/safe": "^3.4",
+@@ -115,2 +119,4 @@
+-      "@php artisan migrate --force"
++      "@php artisan migrate --force",
++      "nub install --frozen-lockfile",
++      "nub run build"
+     ],
+@@ -117 +123,3 @@
+-    "test": "@php artisan test"
++    "test": "@php artisan test",
++    "typescript": "@php artisan typescript:transform --no-interaction",
++    "wayfinder": "@php artisan wayfinder:generate --skip-routes"
+@@ -126 +134,3 @@
+-    "test": "Runs the application tests."
++    "test": "Runs the application tests.",
++    "typescript": "Generates TypeScript definitions from PHP types.",
++    "wayfinder": "Generates TypeScript definitions for routes and controller methods."
+diff -ruN a/config/inertia.php b/config/inertia.php
+--- a/config/inertia.php	1969-12-31 18:00:00
++++ b/config/inertia.php	2026-07-17 23:35:13
+@@ -0,0 +1,144 @@
++<?php
++
++declare(strict_types=1);
++
++return [
++
++    /*
++    |--------------------------------------------------------------------------
++    | Server Side Rendering
++    |--------------------------------------------------------------------------
++    |
++    | These options configures if and how Inertia uses Server Side Rendering
++    | to pre-render the initial visits made to your application's pages.
++    |
++    | You can specify a custom SSR bundle path, or omit it to let Inertia
++    | try and automatically detect it for you.
++    |
++    | Do note that enabling these options will NOT automatically make SSR work,
++    | as a separate rendering service needs to be available. To learn more,
++    | please visit https://inertiajs.com/server-side-rendering
++    |
++    */
++
++    'ssr' => [
++
++        'enabled' => (bool) env('INERTIA_SSR_ENABLED', false),
++
++        'runtime' => env('INERTIA_SSR_RUNTIME', 'node'),
++
++        'ensure_runtime_exists' => (bool) env('INERTIA_SSR_ENSURE_RUNTIME_EXISTS', false),
++
++        'url' => env('INERTIA_SSR_URL', 'http://127.0.0.1:13714'),
++
++        'ensure_bundle_exists' => (bool) env('INERTIA_SSR_ENSURE_BUNDLE_EXISTS', true),
++
++        // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
++
++        /*
++        |--------------------------------------------------------------------------
++        | SSR Error Handling
++        |--------------------------------------------------------------------------
++        |
++        | When SSR rendering fails, Inertia gracefully falls back to client-side
++        | rendering. Set throw_on_error to true to throw an exception instead.
++        | This is useful for E2E testing where you want SSR errors to fail loudly.
++        |
++        | You can also listen for the Inertia\Ssr\SsrRenderFailed event to handle
++        | failures in your own way (e.g., logging, error tracking service).
++        |
++        */
++
++        'throw_on_error' => (bool) env('INERTIA_SSR_THROW_ON_ERROR', false),
++
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | Pages
++    |--------------------------------------------------------------------------
++    |
++    | Set `ensure_pages_exist` to true if you want to enforce that Inertia page
++    | components exist on disk when rendering a page. This is useful for
++    | catching missing or misnamed components.
++    |
++    | The `paths` and `extensions` options define where to look for page
++    | components and which file extensions to consider.
++    |
++    */
++
++    'pages' => [
++
++        'ensure_pages_exist' => true,
++
++        'paths' => [
++
++            resource_path('js/pages'),
++
++        ],
++
++        'extensions' => [
++
++            'js',
++            'jsx',
++            'svelte',
++            'ts',
++            'tsx',
++            'vue',
++
++        ],
++
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | Testing
++    |--------------------------------------------------------------------------
++    |
++    | When using `assertInertia`, the assertion attempts to locate the
++    | component as a file relative to the `pages.paths` AND with any of
++    | the `pages.extensions` specified above.
++    |
++    | You can disable this behavior by setting `ensure_pages_exist`
++    | to false.
++    |
++    */
++
++    'testing' => [
++
++        'ensure_pages_exist' => true,
++
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | Expose Shared Prop Keys
++    |--------------------------------------------------------------------------
++    |
++    | When enabled, each page response includes a `sharedProps` metadata key
++    | listing the top-level prop keys that were registered via `Inertia::share`.
++    | The frontend can use this to carry shared props over during instant visits.
++    |
++    */
++
++    'expose_shared_prop_keys' => true,
++
++    /*
++    |--------------------------------------------------------------------------
++    | History
++    |--------------------------------------------------------------------------
++    |
++    | Enable `encrypt` to encrypt page data before it is stored in the
++    | browser's history state, preventing sensitive information from
++    | being accessible after logout. Can also be enabled per-request
++    | or via the `inertia.encrypt` middleware.
++    |
++    */
++
++    'history' => [
++
++        'encrypt' => (bool) env('INERTIA_ENCRYPT_HISTORY', true),
++
++    ],
++
++];
+diff -ruN a/lefthook.yml b/lefthook.yml
+--- a/lefthook.yml	2026-07-18 06:31:34
++++ b/lefthook.yml	2026-07-17 23:35:13
+@@ -4,6 +4,20 @@
+   parallel: true
+ 
+   jobs:
++    - name: Frontend
++      group:
++        piped: true
++        jobs:
++          - name: Oxfmt
++            glob: '**/*.{css,md,json,toml,ts,tsx,yaml,yml}'
++            run: nub run fmt --no-error-on-unmatched-pattern {staged_files}
++            stage_fixed: true
++
++          - name: Oxlint
++            glob: '**/*.{cjs,js,ts,tsx}'
++            run: nub run fix {staged_files}
++            stage_fixed: true
++
+     - name: Backend
+       group:
+         piped: true
+@@ -33,5 +47,8 @@
+   parallel: true
+ 
+   jobs:
++    - name: tsgo
++      run: nub exec tsgo -b
++
+     - name: PHPStan
+       run: composer phpstan
+diff -ruN a/package.json b/package.json
+--- a/package.json	1969-12-31 18:00:00
++++ b/package.json	2026-07-17 23:35:13
+@@ -0,0 +1,63 @@
++{
++  "$schema": "https://www.schemastore.org/package.json",
++  "name": "template",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "build": "tsgo -b && vite build",
++    "dev": "vite",
++    "fix": "oxlint --fix --fix-dangerously --fix-suggestions --tsconfig tsconfig.json",
++    "fmt": "oxfmt",
++    "fmt:check": "oxfmt --check",
++    "lint": "oxlint --tsconfig tsconfig.json",
++    "prebuild": "composer wayfinder && composer typescript",
++    "preview": "vite preview"
++  },
++  "dependencies": {
++    "@heroui/react": "^3.2.2",
++    "@heroui/styles": "^3.2.2",
++    "@inertiajs/react": "^3.6.1",
++    "@inertiaui/modal-react": "^3.1.2",
++    "@sentry/react": "^10.64.0",
++    "react": "^19.2.7",
++    "react-dom": "^19.2.7"
++  },
++  "devDependencies": {
++    "@babel/core": "^8.0.1",
++    "@inertiajs/vite": "^3.6.1",
++    "@laravel/vite-plugin-wayfinder": "^0.1.7",
++    "@react-aria/optimize-locales-plugin": "^2.0.0",
++    "@rolldown/plugin-babel": "^0.2.3",
++    "@sentry/vite-plugin": "^5.3.0",
++    "@tailwindcss/vite": "^4.3.2",
++    "@types/node": "^26.1.0",
++    "@types/react": "^19.2.17",
++    "@types/react-dom": "^19.2.3",
++    "@typescript/native-preview": "7.0.0-dev.20260705.1",
++    "@vitejs/plugin-react": "^6.0.3",
++    "babel-plugin-react-compiler": "^1.0.0",
++    "chokidar": "^5.0.0",
++    "laravel-vite-plugin": "^3.1.0",
++    "lefthook": "^2.1.10",
++    "lightningcss": "^1.32.0",
++    "oxfmt": "^0.57.0",
++    "oxlint": "^1.73.0",
++    "oxlint-tsgolint": "^0.24.0",
++    "tailwindcss": "^4.3.2",
++    "tailwindcss-react-aria-components": "^2.2.0",
++    "typescript": "~6.0.3",
++    "vite": "^8.1.3",
++    "vite-plugin-manifest-sri": "^0.2.0",
++    "vite-plugin-run": "^0.9.1",
++    "vite-tsconfig-paths": "^6.1.1"
++  },
++  "devEngines": {
++    "packageManager": {
++      "name": "pnpm",
++      "version": "^11.9.0",
++      "onFail": "warn"
++    }
++  },
++  "packageManager": "pnpm@11.9.0+sha512.bd682d5d03fe525ef7c9fd6780c6884d1e756ac4c9c9fe00c538782824310dcf90e3ddc4f53835f06dfaebd5085e41855e0bcbb3b60de2ac5bbab89e5036f03b"
++}
+diff -ruN a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+--- a/pnpm-workspace.yaml	1969-12-31 18:00:00
++++ b/pnpm-workspace.yaml	2026-07-17 23:35:13
+@@ -0,0 +1,10 @@
++allowBuilds:
++  '@sentry/cli': true
++  lefthook: true
++
++publicHoistPattern:
++  - '@heroui/*'
++  - '@inertiajs/*'
++  - '@internationalized/date'
++  - '@react-types/*'
++  - react-aria-components
+diff -ruN a/resources/js/app.tsx b/resources/js/app.tsx
+--- a/resources/js/app.tsx	1969-12-31 18:00:00
++++ b/resources/js/app.tsx	2026-07-17 23:35:13
+@@ -0,0 +1,62 @@
++import './index.css'
++import {RouterProvider, toast as heroToast, Toast} from '@heroui/react'
++import {createInertiaApp, router, type ResolvedComponent} from '@inertiajs/react'
++import {ModalStackProvider} from '@inertiaui/modal-react'
++import * as Sentry from '@sentry/react'
++
++import {Modal as ModalLayout} from './layouts/Modal'
++
++Sentry.init({
++  dsn: import.meta.env.VITE_SENTRY_DSN,
++  integrations: [
++    Sentry.browserProfilingIntegration(),
++    Sentry.browserTracingIntegration(),
++    Sentry.captureConsoleIntegration(),
++    Sentry.replayIntegration(),
++  ],
++  replaysOnErrorSampleRate: 1.0,
++  replaysSessionSampleRate: 0.25,
++  tracesSampleRate: 0.25,
++})
++
++router.on('flash', (event) => {
++  const {toast} = event.detail.flash
++
++  if (!toast) {
++    return
++  }
++
++  heroToast(toast.title, {
++    description: toast.description,
++    timeout: toast.timeout,
++    variant: toast.variant,
++  })
++})
++
++void createInertiaApp({
++  layout: () => ModalLayout,
++  progress: {
++    color: 'var(--accent)',
++  },
++  title: (title) => (title.length > 0 ? `${title} - Template` : 'Template'),
++  resolve: (name) => {
++    const pages = import.meta.glob<ResolvedComponent>([
++      './pages/**/*.tsx',
++      '!./pages/**/_components/**/*.tsx',
++    ])
++    const page = pages[`./pages/${name}.tsx`]
++
++    if (typeof page === 'undefined') {
++      throw new Error(`Page not found: ${name}.`)
++    }
++
++    return page()
++  },
++  strictMode: true,
++  withApp: (app) => (
++    <RouterProvider navigate={(path, routerOptions) => router.visit(path, routerOptions)}>
++      <ModalStackProvider>{app}</ModalStackProvider>
++      <Toast.Provider />
++    </RouterProvider>
++  ),
++})
+diff -ruN a/resources/js/index.css b/resources/js/index.css
+--- a/resources/js/index.css	1969-12-31 18:00:00
++++ b/resources/js/index.css	2026-07-17 23:35:13
+@@ -0,0 +1,6 @@
++@import 'tailwindcss';
++@import '@heroui/styles';
++
++@plugin 'tailwindcss-react-aria-components';
++
++@source '../views';
+diff -ruN a/resources/js/layouts/Modal.tsx b/resources/js/layouts/Modal.tsx
+--- a/resources/js/layouts/Modal.tsx	1969-12-31 18:00:00
++++ b/resources/js/layouts/Modal.tsx	2026-07-17 23:35:13
+@@ -0,0 +1,15 @@
++import {ModalRoot} from '@inertiaui/modal-react'
++import type {ReactNode} from 'react'
++
++interface ModalProps {
++  children: ReactNode
++}
++
++export function Modal(props: ModalProps) {
++  return (
++    <>
++      {props.children}
++      <ModalRoot />
++    </>
++  )
++}
+diff -ruN a/resources/js/pages/Home.tsx b/resources/js/pages/Home.tsx
+--- a/resources/js/pages/Home.tsx	1969-12-31 18:00:00
++++ b/resources/js/pages/Home.tsx	2026-07-17 23:35:13
+@@ -0,0 +1,11 @@
++interface HomeProps {
++  now: string
++}
++
++export default function Home({now}: HomeProps) {
++  return (
++    <div className="flex min-h-screen items-center justify-center">
++      <h1 className="text-3xl font-bold underline">Home - {now}</h1>
++    </div>
++  )
++}
+diff -ruN a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
+--- a/resources/js/types/global.d.ts	1969-12-31 18:00:00
++++ b/resources/js/types/global.d.ts	2026-07-17 23:35:13
+@@ -0,0 +1,25 @@
++import type {VisitOptions} from '@inertiajs/core'
++
++import type {ToastVariant} from '#/types/generated/enums'
++import type {PageProps as LocalPageProps} from '#/types/laravel'
++
++declare module '@inertiajs/core' {
++  export interface InertiaConfig {
++    flashDataType: {
++      toast?: {
++        variant: ToastVariant
++        description?: string
++        timeout: number
++        title: string
++      }
++    }
++  }
++
++  interface PageProps extends LocalPageProps {}
++}
++
++declare module '@react-types/shared' {
++  interface RouterConfig {
++    routerOptions: VisitOptions
++  }
++}
+diff -ruN a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
+--- a/resources/js/types/laravel.ts	1969-12-31 18:00:00
++++ b/resources/js/types/laravel.ts	2026-07-17 23:35:13
+@@ -0,0 +1,62 @@
++import type {ErrorBag, Errors, VisitOptions} from '@inertiajs/core'
++
++/* Types */
++
++export interface Pagination<T> {
++  data: T[]
++  links: {
++    first: string
++    last: string
++    next: null | string
++    prev: null | string
++  }
++  meta: {
++    current_page: number
++    from: null
++    last_page: number
++    links: {
++      active: boolean
++      label: string
++      url: null | string
++    }[]
++    path: string
++    per_page: number
++    to: null
++    total: number
++  }
++}
++
++/* Inertia */
++
++export interface PageProps {
++  [key: string]: unknown
++  auth: {
++    user: null | UserResource
++  }
++  context: {
++    adult_hub_url: string
++    base_domain: string
++    environment: string
++    is_youth_domain: boolean
++    youth_hub_url: string
++  }
++  deferred?: Record<string, VisitOptions['only']>
++  errors: Errors & ErrorBag
++}
++
++/* Resources */
++
++interface Resource {
++  created_at: string
++  id: number
++  updated_at: string
++}
++
++export interface UserResource extends Resource {
++  avatar_url: string
++  email: string
++  first_name: string
++  is_email_verified: boolean
++  last_name: string
++  name: string
++}
+diff -ruN a/resources/js/vite-env.d.ts b/resources/js/vite-env.d.ts
+--- a/resources/js/vite-env.d.ts	1969-12-31 18:00:00
++++ b/resources/js/vite-env.d.ts	2026-07-17 23:35:13
+@@ -0,0 +1 @@
++/// <reference types="vite/client" />
+diff -ruN a/resources/views/app.blade.php b/resources/views/app.blade.php
+--- a/resources/views/app.blade.php	1969-12-31 18:00:00
++++ b/resources/views/app.blade.php	2026-07-17 23:35:13
+@@ -0,0 +1,24 @@
++<!DOCTYPE html>
++<html lang="{{ str_replace('_', '-', Config::string('app.locale')) }}">
++    <head>
++        <meta charset="utf-8" />
++        <meta name="viewport" content="width=device-width, initial-scale=1">
++
++        <link rel="icon" href="{{ url('favicon.ico') }}" sizes="any" />
++
++        <meta name="theme-color" content="#ffffff" />
++
++        @fonts('sans')
++
++        @viteReactRefresh
++        @vite('resources/js/app.tsx')
++
++        <x-inertia::head>
++            <title>Template</title>
++        </x-inertia::head>
++    </head>
++
++    <body class="bg-background text-foreground font-sans antialiased">
++        <x-inertia::app />
++    </body>
++</html>
+diff -ruN a/routes/web.php b/routes/web.php
+--- a/routes/web.php	2026-07-18 06:29:29
++++ b/routes/web.php	2026-07-18 06:25:21
+@@ -5 +5,3 @@
+ use Illuminate\Support\Facades\Route;
++use Inertia\Inertia;
++use Inertia\Response;
+@@ -7,3 +9,13 @@
+-Route::get('/', fn (): array => [
+-    'laravel' => app()->version(),
+-])->name('home');
++Route::get('/', function (): Response {
++    return Inertia::render('Home', [
++        'now' => now()->toDateTimeString(),
++    ]);
++})->name('home');
++
++Route::middleware('guest')->group(function (): void {
++});
++
++Route::middleware('auth')->group(function (): void {
++    Route::middleware('verified')->scopeBindings()->group(function (): void {
++    });
++});
+diff -ruN a/solo.yml b/solo.yml
+--- a/solo.yml	2026-07-18 06:31:35
++++ b/solo.yml	2026-07-17 23:35:13
+@@ -15,3 +15,11 @@
+     auto_restart: true
+     auto_start: true
+     command: php artisan schedule:work --whisper
++  'nub: build':
++    auto_restart: false
++    auto_start: false
++    command: nub run build
++  'nub: dev':
++    auto_restart: true
++    auto_start: true
++    command: nub run dev
+diff -ruN a/tests/Feature/HandleInertiaRequestsTest.php b/tests/Feature/HandleInertiaRequestsTest.php
+--- a/tests/Feature/HandleInertiaRequestsTest.php	1969-12-31 18:00:00
++++ b/tests/Feature/HandleInertiaRequestsTest.php	2026-07-17 23:35:13
+@@ -0,0 +1,29 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Http\Middleware\HandleInertiaRequests;
++use App\Http\Resources\UserResource;
++use App\Models\User;
++use Illuminate\Http\Request;
++
++it('shares a null auth user for guests', function (): void {
++    $request = Request::create('/');
++    $request->setUserResolver(fn (): null => null);
++
++    $shared = resolve(HandleInertiaRequests::class)->share($request);
++
++    expect($shared['auth']['user'])->toBeNull();
++});
++
++it('shares the authenticated user resource', function (): void {
++    $user = User::factory()->createOne();
++    $request = Request::create('/');
++    $request->setUserResolver(fn (): User => $user);
++
++    $shared = resolve(HandleInertiaRequests::class)->share($request);
++
++    expect($shared['auth']['user'])
++        ->toBeInstanceOf(UserResource::class)
++        ->resource->toBe($user);
++});
+diff -ruN a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integration/Http/Resources/UserResourceTest.php
+--- a/tests/Integration/Http/Resources/UserResourceTest.php	1969-12-31 18:00:00
++++ b/tests/Integration/Http/Resources/UserResourceTest.php	2026-07-17 23:35:13
+@@ -0,0 +1,28 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\User;
++
++it('formats resource correctly', function (): void {
++    $user = User::factory()->createOne([
++        'email' => ' TEST@example.com ',
++    ]);
++
++    $resource = json_decode($user->toResource()->toJson(), true);
++
++    expect([
++        'avatar_url' => sprintf(
++            'https://www.gravatar.com/avatar/%s?d=mp',
++            '973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b'
++        ),
++        'created_at' => $user->created_at->toJSON(),
++        'email' => $user->email,
++        'first_name' => $user->first_name,
++        'id' => $user->id,
++        'is_email_verified' => true,
++        'last_name' => $user->last_name,
++        'name' => $user->name,
++        'updated_at' => $user->updated_at->toJSON(),
++    ])->toMatchArray($resource);
++});
+diff -ruN a/tests/Pest.php b/tests/Pest.php
+--- a/tests/Pest.php	2026-07-18 06:29:29
++++ b/tests/Pest.php	2026-07-17 23:35:13
+@@ -5,14 +5,18 @@
+ use function Pest\Laravel\actingAs;
+ use function Pest\Laravel\freezeSecond;
++use function Pest\Laravel\withoutVite;
+ 
++use App\Enums\ToastVariant;
+ use App\Models\User;
+ use Illuminate\Contracts\Auth\Authenticatable;
++use Illuminate\Testing\TestResponse;
+ use Tests\TestCase;
+ 
+ pest()
+     ->extend(TestCase::class)
+     ->beforeEach(function (): void {
+         freezeSecond();
++        withoutVite();
+     })
+     ->in('Feature', 'Integration', 'Unit');
+ 
+@@ -23,3 +27,17 @@
+ 
+     return $user;
+ }
++
++TestResponse::macro('assertToast', function (
++    string $title,
++    null|string $description = null,
++    ToastVariant $variant = ToastVariant::Success,
++    int $timeout = 5
++): TestResponse {
++    return $this->assertSessionHas('inertia.flash_data.toast', array_filter([
++        'description' => $description,
++        'timeout' => $timeout * 1000,
++        'title' => $title,
++        'variant' => $variant->value,
++    ], static fn (null|int|string $value): bool => $value !== null));
++});
+diff -ruN a/tests/Unit/Enums/FlashKeyTest.php b/tests/Unit/Enums/FlashKeyTest.php
+--- a/tests/Unit/Enums/FlashKeyTest.php	1969-12-31 18:00:00
++++ b/tests/Unit/Enums/FlashKeyTest.php	2026-07-17 23:35:13
+@@ -0,0 +1,11 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\FlashKey;
++
++it('defines available values', function (): void {
++    expect(FlashKey::values())->toEqual([
++        'toast',
++    ]);
++});
+diff -ruN a/tests/Unit/Enums/ToastVariantTest.php b/tests/Unit/Enums/ToastVariantTest.php
+--- a/tests/Unit/Enums/ToastVariantTest.php	1969-12-31 18:00:00
++++ b/tests/Unit/Enums/ToastVariantTest.php	2026-07-17 23:35:13
+@@ -0,0 +1,15 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\ToastVariant;
++
++it('defines available values', function (): void {
++    expect(ToastVariant::values())->toEqual([
++        'accent',
++        'danger',
++        'default',
++        'success',
++        'warning',
++    ]);
++});
+diff -ruN a/tsconfig.app.json b/tsconfig.app.json
+--- a/tsconfig.app.json	1969-12-31 18:00:00
++++ b/tsconfig.app.json	2026-07-17 23:35:13
+@@ -0,0 +1,38 @@
++{
++  "compilerOptions": {
++    "lib": ["ES2022", "DOM", "DOM.Iterable"],
++    "module": "ESNext",
++    "skipLibCheck": true,
++    "target": "ES2022",
++    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
++    "types": ["vite/client"],
++    "useDefineForClassFields": true,
++
++    /* Bundler mode */
++    "allowImportingTsExtensions": false,
++    "jsx": "react-jsx",
++    "moduleDetection": "force",
++    "moduleResolution": "bundler",
++    "noEmit": true,
++    "verbatimModuleSyntax": true,
++
++    /* Linting */
++    "erasableSyntaxOnly": true,
++    "noFallthroughCasesInSwitch": true,
++    "noUncheckedSideEffectImports": true,
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "strict": true,
++
++    /* Custom */
++    "allowJs": false,
++    "forceConsistentCasingInFileNames": true,
++    "noUncheckedIndexedAccess": true,
++    "paths": {
++      "#/*": ["./resources/js/*"]
++    },
++    "strictNullChecks": true
++  },
++  "exclude": ["resources/js/actions/Fruitcake"],
++  "include": ["resources/js"]
++}
+diff -ruN a/tsconfig.json b/tsconfig.json
+--- a/tsconfig.json	1969-12-31 18:00:00
++++ b/tsconfig.json	2026-07-17 23:35:13
+@@ -0,0 +1,4 @@
++{
++  "files": [],
++  "references": [{"path": "./tsconfig.app.json"}, {"path": "./tsconfig.node.json"}]
++}
+diff -ruN a/tsconfig.node.json b/tsconfig.node.json
+--- a/tsconfig.node.json	1969-12-31 18:00:00
++++ b/tsconfig.node.json	2026-07-17 23:35:13
+@@ -0,0 +1,26 @@
++{
++  "compilerOptions": {
++    "lib": ["ES2023"],
++    "module": "ESNext",
++    "skipLibCheck": true,
++    "target": "ES2023",
++    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
++    "types": ["node"],
++
++    /* Bundler mode */
++    "allowImportingTsExtensions": false,
++    "moduleDetection": "force",
++    "moduleResolution": "bundler",
++    "noEmit": true,
++    "verbatimModuleSyntax": true,
++
++    /* Linting */
++    "erasableSyntaxOnly": true,
++    "noFallthroughCasesInSwitch": true,
++    "noUncheckedSideEffectImports": true,
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "strict": true
++  },
++  "include": ["vite.config.ts"]
++}
+diff -ruN a/vite.config.ts b/vite.config.ts
+--- a/vite.config.ts	1969-12-31 18:00:00
++++ b/vite.config.ts	2026-07-17 23:35:13
+@@ -0,0 +1,71 @@
++import inertia from '@inertiajs/vite'
++import {wayfinder} from '@laravel/vite-plugin-wayfinder'
++import optimizeLocales from '@react-aria/optimize-locales-plugin'
++import babel from '@rolldown/plugin-babel'
++import {sentryVitePlugin} from '@sentry/vite-plugin'
++import tailwindcss from '@tailwindcss/vite'
++import react, {reactCompilerPreset} from '@vitejs/plugin-react'
++import laravel from 'laravel-vite-plugin'
++import {google} from 'laravel-vite-plugin/fonts'
++import {defineConfig, loadEnv} from 'vite'
++import manifestSRI from 'vite-plugin-manifest-sri'
++import {run} from 'vite-plugin-run'
++import tsconfigPaths from 'vite-tsconfig-paths'
++
++export default defineConfig(({mode}) => {
++  const env = loadEnv(mode, process.cwd(), '')
++
++  return {
++    build: {
++      cssMinify: 'lightningcss',
++      sourcemap: 'hidden',
++    },
++    plugins: [
++      inertia(),
++      laravel({
++        fonts: [
++          google('Inter', {
++            alias: 'sans',
++            display: 'swap',
++            fallbacks: ['system-ui', 'sans-serif'],
++            preload: [{weight: 400}, {weight: 600}],
++            styles: ['normal'],
++            subsets: ['latin'],
++            weights: [100, 200, 300, 400, 500, 600, 700, 800, 900],
++          }),
++        ],
++        input: ['resources/js/app.tsx'],
++        refresh: true,
++      }),
++      manifestSRI(),
++      {
++        ...optimizeLocales.vite({
++          locales: ['en-US', 'es-ES'],
++        }),
++        enforce: 'pre',
++      },
++      react(),
++      babel({presets: [reactCompilerPreset()]}),
++      run({
++        silent: false,
++        input: {
++          name: 'typescript transform',
++          run: ['composer', 'typescript'],
++          pattern: 'app/Enums/**/*.php',
++          build: false,
++        },
++      }),
++      tailwindcss(),
++      tsconfigPaths(),
++      wayfinder({routes: false}),
++      sentryVitePlugin({
++        authToken: env.SENTRY_AUTH_TOKEN,
++        org: 'template',
++        project: 'template',
++        release: {
++          name: env.RAILWAY_GIT_COMMIT_SHA,
++        },
++      }),
++    ],
++  }
++})

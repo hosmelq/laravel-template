@@ -1,0 +1,797 @@
+diff -ruN -U0 a/app/Actions/Organizations/CreateOrganization.php b/app/Actions/Organizations/CreateOrganization.php
+--- a/app/Actions/Organizations/CreateOrganization.php	1969-12-31 18:00:00
++++ b/app/Actions/Organizations/CreateOrganization.php	2026-07-23 05:58:35
+@@ -0,0 +1,26 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Actions\Organizations;
++
++use App\Actions\Organizations\Inputs\CreateOrganizationInput;
++use App\Models\Organization;
++use App\Models\User;
++use Illuminate\Support\Facades\DB;
++
++class CreateOrganization
++{
++    public function handle(User $user, CreateOrganizationInput $input): Organization
++    {
++        return DB::transaction(function () use ($user, $input): Organization {
++            $organization = $user->ownedOrganizations()->create($input->transform());
++
++            $organization->users()->attach($user);
++
++            $user->switchOrganization($organization);
++
++            return $organization;
++        });
++    }
++}
+diff -ruN -U0 a/app/Actions/Organizations/Inputs/CreateOrganizationInput.php b/app/Actions/Organizations/Inputs/CreateOrganizationInput.php
+--- a/app/Actions/Organizations/Inputs/CreateOrganizationInput.php	1969-12-31 18:00:00
++++ b/app/Actions/Organizations/Inputs/CreateOrganizationInput.php	2026-07-23 05:58:35
+@@ -0,0 +1,18 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Actions\Organizations\Inputs;
++
++use Spatie\LaravelData\Attributes\MapName;
++use Spatie\LaravelData\Data;
++use Spatie\LaravelData\Mappers\SnakeCaseMapper;
++
++#[MapName(SnakeCaseMapper::class)]
++final class CreateOrganizationInput extends Data
++{
++    public function __construct(
++        public readonly string $name,
++    ) {
++    }
++}
+diff -ruN -U0 a/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php
+--- a/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php	1969-12-31 18:00:00
++++ b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php	2026-07-23 05:58:35
+@@ -0,0 +1,19 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Actions\Organizations\Inputs;
++
++use Spatie\LaravelData\Attributes\MapName;
++use Spatie\LaravelData\Data;
++use Spatie\LaravelData\Mappers\SnakeCaseMapper;
++use Spatie\LaravelData\Optional;
++
++#[MapName(SnakeCaseMapper::class)]
++final class UpdateOrganizationInput extends Data
++{
++    public function __construct(
++        public readonly Optional|string $name,
++    ) {
++    }
++}
+diff -ruN -U0 a/app/Actions/Organizations/UpdateOrganization.php b/app/Actions/Organizations/UpdateOrganization.php
+--- a/app/Actions/Organizations/UpdateOrganization.php	1969-12-31 18:00:00
++++ b/app/Actions/Organizations/UpdateOrganization.php	2026-07-23 05:58:35
+@@ -0,0 +1,18 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Actions\Organizations;
++
++use App\Actions\Organizations\Inputs\UpdateOrganizationInput;
++use App\Models\Organization;
++
++class UpdateOrganization
++{
++    public function handle(Organization $organization, UpdateOrganizationInput $input): Organization
++    {
++        $organization->update($input->transform());
++
++        return $organization;
++    }
++}
+diff -ruN -U0 a/app/Enums/NanoIDAlphabet.php b/app/Enums/NanoIDAlphabet.php
+--- a/app/Enums/NanoIDAlphabet.php	1969-12-31 18:00:00
++++ b/app/Enums/NanoIDAlphabet.php	2026-07-23 05:58:35
+@@ -0,0 +1,17 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums;
++
++use ArchTech\Enums\InvokableCases;
++
++/**
++ * @method static string Alphanumeric()
++ */
++enum NanoIDAlphabet: string
++{
++    use InvokableCases;
++
++    case Alphanumeric = 'abcdefghijklmnopqrstuvwxyz0123456789';
++}
+diff -ruN -U0 a/app/Models/Concerns/HasPublicId.php b/app/Models/Concerns/HasPublicId.php
+--- a/app/Models/Concerns/HasPublicId.php	1969-12-31 18:00:00
++++ b/app/Models/Concerns/HasPublicId.php	2026-06-16 08:49:45
+@@ -0,0 +1,70 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Models\Concerns;
++
++use function Safe\preg_match;
++
++use App\Enums\NanoIDAlphabet;
++use Hidehalo\Nanoid\Client;
++use Illuminate\Database\Eloquent\Attributes\Scope;
++use Illuminate\Database\Eloquent\Builder;
++use Illuminate\Database\Eloquent\Concerns\HasUniqueStringIds;
++use Illuminate\Database\Eloquent\ModelNotFoundException;
++
++/**
++ * @property-read string $public_id
++ */
++trait HasPublicId
++{
++    use HasUniqueStringIds;
++
++    public const int PUBLIC_ID_LENGTH = 10;
++
++    public static function findByPublicId(string $publicId): null|static
++    {
++        return static::query()->wherePublicId($publicId)->first();
++    }
++
++    /**
++     * @throws ModelNotFoundException<$this>
++     */
++    public static function findOrFailByPublicId(string $publicId): static
++    {
++        return static::query()->wherePublicId($publicId)->firstOrFail();
++    }
++
++    public function getRouteKeyName(): string
++    {
++        return 'public_id';
++    }
++
++    public function newUniqueId(): string
++    {
++        return resolve(Client::class)->formattedId(NanoIDAlphabet::Alphanumeric(), self::PUBLIC_ID_LENGTH);
++    }
++
++    /**
++     * @return string[]
++     */
++    public function uniqueIds(): array
++    {
++        return ['public_id'];
++    }
++
++    protected function isValidUniqueId(mixed $value): bool
++    {
++        return is_string($value)
++            && preg_match('/^[a-z0-9]{'.self::PUBLIC_ID_LENGTH.'}$/i', $value) === 1;
++    }
++
++    /**
++     * @param Builder<static> $builder
++     */
++    #[Scope]
++    protected function wherePublicId(Builder $builder, string $publicId): void
++    {
++        $builder->where($builder->qualifyColumn('public_id'), $publicId);
++    }
++}
+diff -ruN -U0 a/app/Models/Membership.php b/app/Models/Membership.php
+--- a/app/Models/Membership.php	1969-12-31 18:00:00
++++ b/app/Models/Membership.php	2026-07-23 05:58:35
+@@ -0,0 +1,14 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Models;
++
++use Illuminate\Database\Eloquent\Relations\Pivot;
++use Override;
++
++class Membership extends Pivot
++{
++    #[Override]
++    public $incrementing = true;
++}
+diff -ruN -U0 a/app/Models/Organization.php b/app/Models/Organization.php
+--- a/app/Models/Organization.php	1969-12-31 18:00:00
++++ b/app/Models/Organization.php	2026-07-23 05:58:35
+@@ -0,0 +1,61 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Models;
++
++use App\Models\Concerns\HasPublicId;
++use Carbon\CarbonImmutable;
++use Database\Factories\OrganizationFactory;
++use Illuminate\Database\Eloquent\Collection;
++use Illuminate\Database\Eloquent\Factories\HasFactory;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++use Illuminate\Database\Eloquent\Relations\BelongsToMany;
++use Override;
++use Spatie\Sluggable\Attributes\Sluggable;
++
++/**
++ * @property-read int $id
++ * @property-read string $public_id
++ * @property-read int $owner_id
++ * @property-read string $name
++ * @property-read string $slug
++ * @property-read CarbonImmutable $created_at
++ * @property-read CarbonImmutable $updated_at
++ * @property-read User $owner
++ * @property-read Collection<int, User> $users
++ */
++#[Sluggable(from: 'name', to: 'slug', onUpdate: false)]
++class Organization extends Model
++{
++    /** @use HasFactory<OrganizationFactory> */
++    use HasFactory;
++
++    use HasPublicId;
++
++    #[Override]
++    public function getRouteKeyName(): string
++    {
++        return 'slug';
++    }
++
++    /**
++     * @return BelongsTo<User, $this>
++     */
++    public function owner(): BelongsTo
++    {
++        return $this->belongsTo(User::class, 'owner_id');
++    }
++
++    /**
++     * @return BelongsToMany<User, $this, Membership, 'membership'>
++     */
++    public function users(): BelongsToMany
++    {
++        return $this->belongsToMany(User::class)
++            ->as('membership')
++            ->using(Membership::class)
++            ->withTimestamps();
++    }
++}
+diff -ruN -U0 a/app/Models/User.php b/app/Models/User.php
+--- a/app/Models/User.php	2026-07-23 05:58:35
++++ b/app/Models/User.php	2026-07-23 05:58:35
+@@ -12,0 +13 @@
++use Illuminate\Database\Eloquent\Collection;
+@@ -13,0 +15,3 @@
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++use Illuminate\Database\Eloquent\Relations\BelongsToMany;
++use Illuminate\Database\Eloquent\Relations\HasMany;
+@@ -19,0 +24 @@
++ * @property-read null|int $current_organization_id
+@@ -28,0 +34,3 @@
++ * @property-read null|Organization $currentOrganization
++ * @property-read Collection<int, Organization> $organizations
++ * @property-read Collection<int, Organization> $ownedOrganizations
+@@ -36,0 +45,77 @@
++
++    public function belongsToOrganization(null|Organization $organization): bool
++    {
++        if (! $organization instanceof Organization) {
++            return false;
++        }
++
++        if ($this->ownsOrganization($organization)) {
++            return true;
++        }
++
++        return $this->organizations->contains($organization);
++    }
++
++    /**
++     * @return BelongsTo<Organization, $this>
++     */
++    public function currentOrganization(): BelongsTo
++    {
++        if ($this->current_organization_id === null && ($organization = $this->organizations->first()) !== null) {
++            $this->switchOrganization($organization);
++        }
++
++        return $this->belongsTo(Organization::class, 'current_organization_id');
++    }
++
++    public function isCurrentOrganization(Organization $organization): bool
++    {
++        if ($this->currentOrganization === null) {
++            return false;
++        }
++
++        return $this->currentOrganization->id === $organization->id;
++    }
++
++    /**
++     * @return BelongsToMany<Organization, $this, Membership, 'membership'>
++     */
++    public function organizations(): BelongsToMany
++    {
++        return $this->belongsToMany(Organization::class)
++            ->as('membership')
++            ->using(Membership::class)
++            ->withTimestamps();
++    }
++
++    /**
++     * @return HasMany<Organization, $this>
++     */
++    public function ownedOrganizations(): HasMany
++    {
++        return $this->hasMany(Organization::class, 'owner_id');
++    }
++
++    public function ownsOrganization(null|Organization $organization): bool
++    {
++        if (! $organization instanceof Organization) {
++            return false;
++        }
++
++        return $this->id === $organization->owner_id;
++    }
++
++    public function switchOrganization(Organization $organization): bool
++    {
++        if (! $this->belongsToOrganization($organization)) {
++            return false;
++        }
++
++        $this->update([
++            'current_organization_id' => $organization->id,
++        ]);
++
++        $this->setRelation('currentOrganization', $organization);
++
++        return true;
++    }
+diff -ruN -U0 a/app/Policies/OrganizationPolicy.php b/app/Policies/OrganizationPolicy.php
+--- a/app/Policies/OrganizationPolicy.php	1969-12-31 18:00:00
++++ b/app/Policies/OrganizationPolicy.php	2026-07-23 05:58:35
+@@ -0,0 +1,26 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Policies;
++
++use App\Models\Organization;
++use App\Models\User;
++
++class OrganizationPolicy
++{
++    public function create(User $user): bool
++    {
++        return true;
++    }
++
++    public function update(User $user, Organization $organization): bool
++    {
++        return $user->belongsToOrganization($organization);
++    }
++
++    public function view(User $user, Organization $organization): bool
++    {
++        return $user->belongsToOrganization($organization);
++    }
++}
+diff -ruN -U0 a/composer.json b/composer.json
+--- a/composer.json	2026-07-23 05:58:35
++++ b/composer.json	2026-07-23 06:02:18
+@@ -18,0 +19 @@
++    "hidehalo/nanoid-php": "^2.0",
+@@ -23,0 +25,2 @@
++    "spatie/laravel-data": "^4.23",
++    "spatie/laravel-sluggable": "^4.0.2",
+diff -ruN -U0 a/database/factories/OrganizationFactory.php b/database/factories/OrganizationFactory.php
+--- a/database/factories/OrganizationFactory.php	1969-12-31 18:00:00
++++ b/database/factories/OrganizationFactory.php	2026-07-23 05:58:35
+@@ -0,0 +1,25 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Database\Factories;
++
++use App\Models\Organization;
++use App\Models\User;
++use Illuminate\Database\Eloquent\Factories\Factory;
++
++/**
++ * @extends Factory<Organization>
++ */
++class OrganizationFactory extends Factory
++{
++    public function definition(): array
++    {
++        return [
++            'owner_id' => User::factory(),
++
++            'name' => fake()->company(),
++            'slug' => null,
++        ];
++    }
++}
+diff -ruN -U0 a/database/factories/UserFactory.php b/database/factories/UserFactory.php
+--- a/database/factories/UserFactory.php	2026-07-23 05:58:35
++++ b/database/factories/UserFactory.php	2026-07-23 05:58:35
+@@ -6,0 +7 @@
++use App\Models\Organization;
+@@ -29,0 +31,2 @@
++            'current_organization_id' => null,
++
+@@ -46,0 +50,13 @@
++    }
++
++    /**
++     * @param array<string, mixed> $values
++     */
++    public function withOrganization(null|Organization $organization = null, array $values = []): static
++    {
++        $organization ??= Organization::factory()->createOne();
++
++        return $this->state(['current_organization_id' => $organization->id])
++            ->afterCreating(function (User $user) use ($organization, $values): void {
++                $user->organizations()->syncWithPivotValues($organization, $values);
++            });
+diff -ruN -U0 a/database/migrations/0001_01_01_000000_create_users_table.php b/database/migrations/0001_01_01_000000_create_users_table.php
+--- a/database/migrations/0001_01_01_000000_create_users_table.php	2026-07-23 05:58:35
++++ b/database/migrations/0001_01_01_000000_create_users_table.php	2026-07-23 06:00:23
+@@ -14,0 +15,2 @@
++            $table->foreignId('current_organization_id')->nullable()->index();
++
+diff -ruN -U0 a/database/migrations/2025_09_06_024317_create_organizations_table.php b/database/migrations/2025_09_06_024317_create_organizations_table.php
+--- a/database/migrations/2025_09_06_024317_create_organizations_table.php	1969-12-31 18:00:00
++++ b/database/migrations/2025_09_06_024317_create_organizations_table.php	2026-07-23 05:58:35
+@@ -0,0 +1,31 @@
++<?php
++
++declare(strict_types=1);
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Support\Facades\DB;
++use Tpetry\PostgresqlEnhanced\Schema\Blueprint;
++use Tpetry\PostgresqlEnhanced\Support\Facades\Schema;
++
++return new class () extends Migration {
++    public function up(): void
++    {
++        Schema::create('organizations', function (Blueprint $table): void {
++            $table->id();
++            $table->caseInsensitiveText('public_id')->unique();
++
++            $table->foreignId('owner_id')->index();
++
++            $table->string('name');
++            $table->string('slug')->unique();
++
++            $table->timestamps();
++        });
++
++        DB::statement(<<<'SQL'
++            ALTER TABLE organizations
++            ADD CONSTRAINT organizations_public_id_format_check
++            CHECK (public_id ~* '^[a-z0-9]{10}$')
++        SQL);
++    }
++};
+diff -ruN -U0 a/database/migrations/2025_09_06_024322_create_organization_user_table.php b/database/migrations/2025_09_06_024322_create_organization_user_table.php
+--- a/database/migrations/2025_09_06_024322_create_organization_user_table.php	1969-12-31 18:00:00
++++ b/database/migrations/2025_09_06_024322_create_organization_user_table.php	2026-07-23 05:58:35
+@@ -0,0 +1,23 @@
++<?php
++
++declare(strict_types=1);
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++return new class () extends Migration {
++    public function up(): void
++    {
++        Schema::create('organization_user', function (Blueprint $table): void {
++            $table->id();
++
++            $table->foreignId('organization_id')->index();
++            $table->foreignId('user_id')->index();
++
++            $table->timestamps();
++
++            $table->unique(['organization_id', 'user_id']);
++        });
++    }
++};
+diff -ruN -U0 a/phpstan-baseline.neon b/phpstan-baseline.neon
+--- a/phpstan-baseline.neon	2026-07-23 05:58:35
++++ b/phpstan-baseline.neon	2026-07-23 06:03:02
+@@ -7,0 +8,36 @@
++
++		-
++			message: '#^Dynamic call to static method Illuminate\\Database\\Eloquent\\Builder\<static\(App\\Models\\Organization\)\>\:\:wherePublicId\(\)\.$#'
++			identifier: staticMethod.dynamicCall
++			count: 2
++			path: app/Models/Organization.php
++
++		-
++			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsTo" over abstract one$#'
++			identifier: typePerfect.narrowReturnObjectType
++			count: 1
++			path: app/Models/Organization.php
++
++		-
++			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsToMany" over abstract one$#'
++			identifier: typePerfect.narrowReturnObjectType
++			count: 1
++			path: app/Models/Organization.php
++
++		-
++			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsTo" over abstract one$#'
++			identifier: typePerfect.narrowReturnObjectType
++			count: 1
++			path: app/Models/User.php
++
++		-
++			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsToMany" over abstract one$#'
++			identifier: typePerfect.narrowReturnObjectType
++			count: 1
++			path: app/Models/User.php
++
++		-
++			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\HasMany" over abstract one$#'
++			identifier: typePerfect.narrowReturnObjectType
++			count: 1
++			path: app/Models/User.php
+diff -ruN -U0 a/tests/Integration/Actions/CreateOrganizationTest.php b/tests/Integration/Actions/CreateOrganizationTest.php
+--- a/tests/Integration/Actions/CreateOrganizationTest.php	1969-12-31 18:00:00
++++ b/tests/Integration/Actions/CreateOrganizationTest.php	2026-07-23 05:58:35
+@@ -0,0 +1,36 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertDatabaseHas;
++
++use App\Actions\Organizations\CreateOrganization;
++use App\Actions\Organizations\Inputs\CreateOrganizationInput;
++use App\Models\Organization;
++use App\Models\User;
++
++it('creates an organization for the user and switches to it', function (): void {
++    $user = User::factory()->createOne();
++
++    $organization = resolve(CreateOrganization::class)->handle(
++        user: $user,
++        input: CreateOrganizationInput::from([
++            'name' => 'My Organization',
++        ]),
++    );
++
++    expect($organization)->toBeInstanceOf(Organization::class);
++
++    assertDatabaseHas(Organization::class, [
++        'name' => 'My Organization',
++        'owner_id' => $user->id,
++    ]);
++
++    $user->refresh();
++
++    expect($user)
++        ->current_organization_id->toBe($organization->id)
++        ->belongsToOrganization($organization)->toBeTrue()
++        ->and($organization->owner->is($user))->toBeTrue()
++        ->and($organization->users)->toHaveCount(1);
++});
+diff -ruN -U0 a/tests/Integration/Actions/UpdateOrganizationTest.php b/tests/Integration/Actions/UpdateOrganizationTest.php
+--- a/tests/Integration/Actions/UpdateOrganizationTest.php	1969-12-31 18:00:00
++++ b/tests/Integration/Actions/UpdateOrganizationTest.php	2026-07-23 05:58:35
+@@ -0,0 +1,29 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertDatabaseHas;
++
++use App\Actions\Organizations\Inputs\UpdateOrganizationInput;
++use App\Actions\Organizations\UpdateOrganization;
++use App\Models\Organization;
++
++it('updates organization settings', function (): void {
++    $organization = Organization::factory()->createOne([
++        'name' => 'My Organization',
++    ]);
++
++    $updatedOrganization = resolve(UpdateOrganization::class)->handle(
++        organization: $organization,
++        input: UpdateOrganizationInput::from([
++            'name' => 'Updated Organization',
++        ]),
++    );
++
++    expect($updatedOrganization->is($organization))->toBeTrue();
++
++    assertDatabaseHas(Organization::class, [
++        'name' => 'Updated Organization',
++        'owner_id' => $organization->owner_id,
++    ]);
++});
+diff -ruN -U0 a/tests/Integration/Models/Concerns/HasPublicIdTest.php b/tests/Integration/Models/Concerns/HasPublicIdTest.php
+--- a/tests/Integration/Models/Concerns/HasPublicIdTest.php	1969-12-31 18:00:00
++++ b/tests/Integration/Models/Concerns/HasPublicIdTest.php	2026-07-23 05:58:35
+@@ -0,0 +1,34 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\NanoIDAlphabet;
++use App\Models\Organization;
++use Hidehalo\Nanoid\Client;
++use Illuminate\Database\Eloquent\ModelNotFoundException;
++use Mockery\MockInterface;
++
++it('sets public id when creating', function (): void {
++    $this->mock(Client::class, function (MockInterface $mock): void {
++        $mock->shouldReceive('formattedId')
++            ->once()
++            ->with(NanoIDAlphabet::Alphanumeric(), 10)
++            ->andReturn('abc123de45');
++    });
++
++    $organization = Organization::factory()->createOne();
++
++    expect($organization)
++        ->public_id->toBeString()
++        ->public_id->toBe('abc123de45');
++});
++
++it('throws 404 when organization is not found by public id', function (): void {
++    Organization::findOrFailByPublicId('asdf');
++})->throws(ModelNotFoundException::class);
++
++it('finds assigned public ids case insensitively through the database', function (): void {
++    $organization = Organization::factory()->createOne(['public_id' => 'AbC123dE45']);
++
++    expect($organization->is(Organization::findByPublicId('abc123de45')))->toBeTrue();
++});
+diff -ruN -U0 a/tests/Integration/Models/OrganizationTest.php b/tests/Integration/Models/OrganizationTest.php
+--- a/tests/Integration/Models/OrganizationTest.php	1969-12-31 18:00:00
++++ b/tests/Integration/Models/OrganizationTest.php	2026-07-23 05:58:35
+@@ -0,0 +1,25 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Organization;
++
++it('generates a slug when creating an organization', function (): void {
++    $organization = Organization::factory()->createOne([
++        'name' => 'My Organization',
++    ]);
++
++    expect($organization->slug)->toBe('my-organization');
++});
++
++it('does not regenerate the slug when the organization name changes', function (): void {
++    $organization = Organization::factory()->createOne([
++        'name' => 'My Organization',
++    ]);
++
++    $organization->update([
++        'name' => 'Updated Organization',
++    ]);
++
++    expect($organization->refresh()->slug)->toBe('my-organization');
++});
+diff -ruN -U0 a/tests/Integration/Models/UserTest.php b/tests/Integration/Models/UserTest.php
+--- a/tests/Integration/Models/UserTest.php	1969-12-31 18:00:00
++++ b/tests/Integration/Models/UserTest.php	2026-07-23 05:58:35
+@@ -0,0 +1,59 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Organization;
++use App\Models\User;
++
++it('checks is a user belongs to an organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = User::factory()->createOne();
++
++    expect($user->belongsToOrganization($organization))->toBeFalse();
++
++    $organization->users()->attach($user);
++
++    $user->refresh();
++
++    expect($user->belongsToOrganization($organization))->toBeTrue();
++});
++
++it('checks is a user owns an organization', function (): void {
++    $user = User::factory()->createOne();
++    $userOrganization = Organization::factory()->for($user, 'owner')->createOne();
++    $unrelatedOrganization = Organization::factory()->createOne();
++
++    expect($user->ownsOrganization($userOrganization))->toBeTrue()
++        ->and($user->ownsOrganization($unrelatedOrganization))->toBeFalse();
++});
++
++it('sets current_organization_id when loading currentOrganization if it not already set', function (): void {
++    $user = User::factory()
++        ->has(Organization::factory(), 'organizations')
++        ->createOne();
++
++    expect($user->current_organization_id)->toBeNull();
++
++    $user->currentOrganization;
++
++    expect($user->fresh()->current_organization_id)->not->toBeNull();
++});
++
++it('cannot switch to an unrelated organization', function (): void {
++    $unrelatedOrganization = Organization::factory()->createOne();
++
++    $user = User::factory()->createOne();
++
++    expect($user)
++        ->switchOrganization($unrelatedOrganization)->toBeFalse()
++        ->currentOrganization->toBeNull();
++});
++
++it('can switch to a related organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = User::factory()->withOrganization($organization)->createOne();
++
++    expect($user)
++        ->switchOrganization($organization)->toBeTrue()
++        ->currentOrganization->is($organization)->toBeTrue();
++});
+diff -ruN -U0 a/tests/Unit/Enums/NanoIDAlphabetTest.php b/tests/Unit/Enums/NanoIDAlphabetTest.php
+--- a/tests/Unit/Enums/NanoIDAlphabetTest.php	1969-12-31 18:00:00
++++ b/tests/Unit/Enums/NanoIDAlphabetTest.php	2026-07-23 05:58:35
+@@ -0,0 +1,9 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\NanoIDAlphabet;
++
++it('defines the alphanumeric alphabet', function (): void {
++    expect(NanoIDAlphabet::Alphanumeric())->toBe('abcdefghijklmnopqrstuvwxyz0123456789');
++});
+diff -ruN -U0 a/tests/Unit/Models/OrganizationTest.php b/tests/Unit/Models/OrganizationTest.php
+--- a/tests/Unit/Models/OrganizationTest.php	1969-12-31 18:00:00
++++ b/tests/Unit/Models/OrganizationTest.php	2026-07-23 05:58:35
+@@ -0,0 +1,12 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Concerns\HasPublicId;
++use App\Models\Organization;
++
++it('uses HasPublicId trait', function (): void {
++    $traits = class_uses_recursive(Organization::class);
++
++    expect($traits)->toContain(HasPublicId::class);
++});

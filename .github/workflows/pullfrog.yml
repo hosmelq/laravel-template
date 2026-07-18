@@ -66,8 +66,6 @@ jobs:
 
       - name: Run agent
         uses: pullfrog/pullfrog@v0
-        env:
-          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
         with:
           prompt: ${{ inputs.prompt }}
           status_checks: enabled

@@ -17,20 +17,10 @@
     "php": "^8.5",
     "archtechx/enums": "^1.1.2",
     "hosmelq/name-of-person": "^0.3.0",
-    "inertiajs/inertia-laravel": "^3.1.1",
-    "inertiaui/modal": "^3.1.2",
-    "intervention/image": "^4.1.5",
-    "laravel/fortify": "^1.37.2",
     "laravel/framework": "^13.19.0",
     "laravel/tinker": "^3.0.2",
-    "laravel/wayfinder": "^0.1.20",
-    "league/flysystem-aws-s3-v3": "^3.35.2",
-    "propaganistas/laravel-disposable-email": "^2.5.0",
     "propaganistas/laravel-phone": "^6.0.3",
     "sentry/sentry-laravel": "^4.26.0",
-    "spatie/laravel-health": "^1.40",
-    "spatie/laravel-medialibrary": "^11.23.1",
-    "spatie/laravel-typescript-transformer": "^3.3.0",
     "thecodingmachine/safe": "^3.4",
     "tpetry/laravel-postgresql-enhanced": "^3.7",
     "tpetry/laravel-query-expressions": "^1.6"
@@ -111,7 +101,7 @@
     ],
     "agent:setup": [
       "@php artisan boost:install --ansi --guidelines --mcp --skills --no-interaction",
-      "nubx skills experimental_install"
+      "nubx -y skills experimental_install"
     ],
     "fresh": "@php artisan migrate:fresh --seed",
     "phpstan": "phpstan analyse --memory-limit=4G",
@@ -123,13 +113,9 @@
       "@php -r \"file_exists('.env.testing') || copy('.env.testing.example', '.env.testing');\"",
       "@php artisan key:generate",
       "@php artisan key:generate --env=testing",
-      "@php artisan migrate --force",
-      "nub install --frozen-lockfile",
-      "nub run build"
+      "@php artisan migrate --force"
     ],
-    "test": "@php artisan test",
-    "typescript": "@php artisan typescript:transform --no-interaction",
-    "wayfinder": "@php artisan wayfinder:generate --skip-routes"
+    "test": "@php artisan test"
   },
   "scripts-descriptions": {
     "agent:setup": "Runs project agent setup.",
@@ -138,9 +124,7 @@
     "pint": "Runs Pint.",
     "rector": "Runs Rector.",
     "setup": "Installs dependencies, prepares environment files and keys, runs migrations, and builds frontend assets.",
-    "test": "Runs the application tests.",
-    "typescript": "Generates TypeScript definitions from PHP types.",
-    "wayfinder": "Generates TypeScript definitions for routes and controller methods."
+    "test": "Runs the application tests."
   },
   "$schema": "https://getcomposer.org/schema.json"
 }

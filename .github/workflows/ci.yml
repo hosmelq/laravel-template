@@ -108,17 +108,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install npm dependencies
-        uses: hosmelq/.github/.github/actions/npm-install@0e629f62b840abf1d0d07479e6efa99567293001
-        with:
-          node-version: '24'
-
-      - name: Check JavaScript lint
-        run: nub run lint
-
-      - name: Check JavaScript format
-        run: nub run fmt:check
-
       - name: Check PHP code style
         uses: hosmelq/.github/.github/actions/php-pint-check@0e629f62b840abf1d0d07479e6efa99567293001
         with:
@@ -148,8 +137,8 @@ jobs:
           php-tools: ''
           php-version: '8.5'
 
-  frontend-build:
-    name: Frontend build
+  tests:
+    name: Tests (Shard ${{ matrix.shard }}/4)
 
     runs-on: ubuntu-latest
 
@@ -160,44 +149,6 @@ jobs:
       - check-static-code
       - check-unused-composer-dependencies
       - php-dependencies
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-
-      - name: Prepare composer dependencies
-        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
-        with:
-          artifact-mode: download
-          artifact-name: php-vendor
-          php-tools: ''
-          php-version: '8.5'
-
-      - name: Install npm dependencies
-        uses: hosmelq/.github/.github/actions/npm-install@0e629f62b840abf1d0d07479e6efa99567293001
-        with:
-          node-version: '24'
-
-      - name: Build frontend
-        run: nub run build
-
-      - name: Upload frontend artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: frontend-build
-          if-no-files-found: error
-          path: |
-            public/build
-          retention-days: 1
-
-  tests:
-    name: Tests (Shard ${{ matrix.shard }}/4)
-
-    runs-on: ubuntu-latest
-
-    needs: [frontend-build, php-dependencies]
 
     strategy:
       fail-fast: false
@@ -226,12 +177,6 @@ jobs:
           artifact-name: php-vendor
           php-tools: ''
           php-version: '8.5'
-
-      - name: Download frontend artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: frontend-build
-          path: .
 
       - name: Setup problem matchers
         run: |

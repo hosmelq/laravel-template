@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/laravel-template-features.XXXXXX")"
+readonly checkout="$temporary_root/checkout"
+readonly snapshot="$temporary_root/checkout.tar"
+
+cleanup() {
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
+        trash "$temporary_root"
+    else
+        printf '\nTemporary checkout preserved at %s\n' "$temporary_root" >&2
+    fi
+}
+
+contains() {
+    local expected="$1"
+    shift
+
+    local value
+
+    for value in "$@"; do
+        if [[ "$value" == "$expected" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+trap cleanup EXIT
+
+git clone --no-hardlinks --quiet "$repository_root" "$checkout"
+
+git -C "$repository_root" diff --binary HEAD -- . > "$temporary_root/working-tree.patch"
+
+if [[ -s "$temporary_root/working-tree.patch" ]]; then
+    git -C "$checkout" apply --whitespace=nowarn "$temporary_root/working-tree.patch"
+fi
+
+while IFS= read -r -d '' path; do
+    mkdir -p "$checkout/$(dirname "$path")"
+    cp -pP "$repository_root/$path" "$checkout/$path"
+done < <(git -C "$repository_root" ls-files --others --exclude-standard -z)
+
+tar -C "$checkout" --exclude='.git' -cf "$snapshot" .
+
+features=()
+patch_order=(health media frontend authentication organizations)
+
+while IFS= read -r feature; do
+    features+=("$feature")
+done < <(php -r 'require $argv[1]; foreach (App\Enums\TemplateFeature::cases() as $feature) { echo $feature->value, PHP_EOL; }' "$repository_root/vendor/autoload.php")
+
+for feature in "${features[@]}"; do
+    if ! contains "$feature" "${patch_order[@]}"; then
+        printf 'Missing patch order for %s.\n' "$feature" >&2
+
+        exit 1
+    fi
+
+    if [[ ! -f "$checkout/resources/template/patches/$feature.patch" ]]; then
+        printf 'Missing patch for %s.\n' "$feature" >&2
+
+        exit 1
+    fi
+done
+
+readonly total=$(((1 << ${#features[@]}) - 1))
+
+for ((mask = 1; mask <= total; mask++)); do
+    selected=()
+
+    for ((index = 0; index < ${#features[@]}; index++)); do
+        if (((mask & (1 << index)) != 0)); then
+            selected+=("${features[$index]}")
+        fi
+    done
+
+    scenario="$temporary_root/$mask"
+    mkdir "$scenario"
+    tar -C "$scenario" -xf "$snapshot"
+
+    patches=()
+
+    for feature in "${patch_order[@]}"; do
+        if contains "$feature" "${selected[@]}"; then
+            patches+=("$scenario/resources/template/patches/$feature.patch")
+        fi
+    done
+
+    printf '[%02d/%02d] %s\n' "$mask" "$total" "${selected[*]}"
+
+    git -C "$scenario" apply --check --unidiff-zero "${patches[@]}"
+    git -C "$scenario" apply --unidiff-zero "${patches[@]}"
+
+    php -r 'json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);' "$scenario/composer.json"
+
+    if [[ -f "$scenario/package.json" ]]; then
+        php -r 'json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);' "$scenario/package.json"
+    fi
+done
+
+printf '\nAll %d feature combinations passed.\n' "$total"
