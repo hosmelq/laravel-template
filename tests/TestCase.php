@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Tests;
 
-use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Foundation\Testing\WithCachedConfig;
 use Illuminate\Foundation\Testing\WithCachedRoutes;
 use Illuminate\Support\Facades\Http;
-use Tests\Support\Models\TestModel;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -36,8 +34,5 @@ abstract class TestCase extends BaseTestCase
 
         Http::preventStrayRequests();
 
-        Relation::enforceMorphMap([
-            'test_model' => TestModel::class,
-        ]);
     }
 }

@@ -4,20 +4,6 @@ pre-commit:
   parallel: true
 
   jobs:
-    - name: Frontend
-      group:
-        piped: true
-        jobs:
-          - name: Oxfmt
-            glob: '**/*.{css,md,json,toml,ts,tsx,yaml,yml}'
-            run: nub run fmt --no-error-on-unmatched-pattern {staged_files}
-            stage_fixed: true
-
-          - name: Oxlint
-            glob: '**/*.{cjs,js,ts,tsx}'
-            run: nub run fix {staged_files}
-            stage_fixed: true
-
     - name: Backend
       group:
         piped: true
@@ -47,8 +33,5 @@ pre-push:
   parallel: true
 
   jobs:
-    - name: tsgo
-      run: nub exec tsgo -b
-
     - name: PHPStan
       run: composer phpstan
