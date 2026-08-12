@@ -403,7 +403,7 @@ diff -ruN -U0 a/composer.json b/composer.json
 +    "hidehalo/nanoid-php": "^2.0",
 @@ -23,0 +25,2 @@
 +    "spatie/laravel-data": "^4.23",
-+    "spatie/laravel-sluggable": "^4.0.2",
++    "spatie/laravel-sluggable": "^4.0.3",
 diff -ruN -U0 a/database/factories/OrganizationFactory.php b/database/factories/OrganizationFactory.php
 --- a/database/factories/OrganizationFactory.php	1969-12-31 18:00:00
 +++ b/database/factories/OrganizationFactory.php	2026-07-23 05:58:35

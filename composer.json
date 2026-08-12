@@ -17,37 +17,38 @@
     "php": "^8.5",
     "archtechx/enums": "^1.1.2",
     "hosmelq/name-of-person": "^0.3.0",
-    "laravel/framework": "^13.19.0",
+    "laravel/framework": "^13.24.0",
     "laravel/tinker": "^3.0.2",
     "propaganistas/laravel-phone": "^6.0.3",
-    "sentry/sentry-laravel": "^4.26.0",
+    "sentry/sentry-laravel": "^4.27.0",
     "thecodingmachine/safe": "^3.4",
     "tpetry/laravel-postgresql-enhanced": "^3.7",
     "tpetry/laravel-query-expressions": "^1.6"
   },
   "require-dev": {
     "driftingly/rector-laravel": "^2.5.0",
-    "ergebnis/composer-normalize": "^2.52",
+    "ergebnis/composer-normalize": "^2.52.0",
     "fakerphp/faker": "^1.24.1",
-    "fruitcake/laravel-debugbar": "^4.4.0",
+    "fruitcake/laravel-debugbar": "^4.4.1",
     "larastan/larastan": "^3.10.0",
-    "laravel/boost": "^2.4.11",
+    "laravel/boost": "^2.5.3",
     "laravel/pail": "^1.2.7",
-    "laravel/pint": "^1.29.3",
+    "laravel/pint": "^1.30.4",
     "mockery/mockery": "^1.6.12",
-    "nunomaduro/collision": "^8.9.4",
-    "pestphp/pest": "^4.7.5",
-    "pestphp/pest-plugin-laravel": "^4.1",
+    "nunomaduro/collision": "^8.9.5",
+    "pestphp/pest": "^5.0.4",
+    "pestphp/pest-plugin-agent": "^5.0",
+    "pestphp/pest-plugin-laravel": "^5.0.1",
+    "pestphp/pest-plugin-rector": "^5.0.3",
     "phpstan/extension-installer": "^1.4.3",
-    "phpstan/phpstan-deprecation-rules": "^2.0.4",
-    "phpstan/phpstan-strict-rules": "^2.0.11",
-    "rector/rector": "^2.5.4",
-    "rector/type-perfect": "^2.1.4",
+    "phpstan/phpstan-deprecation-rules": "^2.0.5",
+    "phpstan/phpstan-strict-rules": "^2.0.12",
+    "rector/rector": "^2.6.1",
     "shipmonk/composer-dependency-analyser": "^1.8.4",
-    "spaze/phpstan-disallowed-calls": "^4.12",
+    "spaze/phpstan-disallowed-calls": "^4.14.0",
     "thecodingmachine/phpstan-safe-rule": "^1.4.7",
     "ticketswap/phpstan-error-formatter": "^1.3.0",
-    "tomasvotruba/type-coverage": "^2.2.2"
+    "tomasvotruba/type-coverage": "^2.3.0"
   },
   "minimum-stability": "stable",
   "prefer-stable": true,
@@ -87,7 +88,7 @@
       "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
       "@composer bump",
       "@composer normalize",
-      "@php artisan boost:install --ansi --guidelines --mcp --skills --no-interaction"
+      "@php artisan boost:install --env=local --ansi --guidelines --mcp --skills --no-interaction"
     ],
     "pre-package-uninstall": [
       "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
@@ -100,7 +101,7 @@
       "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
     ],
     "agent:setup": [
-      "@php artisan boost:install --ansi --guidelines --mcp --skills --no-interaction",
+      "@php artisan boost:install --env=local --ansi --guidelines --mcp --skills --no-interaction",
       "nubx -y skills experimental_install"
     ],
     "fresh": "@php artisan migrate:fresh --seed",

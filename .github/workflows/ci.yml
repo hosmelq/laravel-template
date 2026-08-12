@@ -10,6 +10,9 @@ concurrency:
   cancel-in-progress: true
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
 
+permissions:
+  contents: read
+
 jobs:
   check-unused-composer-dependencies:
     name: Check unused composer dependencies
@@ -160,7 +163,7 @@ jobs:
         env:
           POSTGRES_DB: template_testing
           POSTGRES_HOST_AUTH_METHOD: trust
-        image: postgres:18
+        image: postgres:18@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636 # 18.4
         ports:
           - 5432:5432
 

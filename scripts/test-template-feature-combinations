@@ -11,7 +11,11 @@ cleanup() {
     local exit_code=$?
 
     if [[ $exit_code -eq 0 ]]; then
-        trash "$temporary_root"
+        if command -v trash >/dev/null 2>&1; then
+            trash "$temporary_root"
+        else
+            trash-put "$temporary_root"
+        fi
     else
         printf '\nTemporary checkout preserved at %s\n' "$temporary_root" >&2
     fi
@@ -102,6 +106,47 @@ for ((mask = 1; mask <= total; mask++)); do
 
     if [[ -f "$scenario/package.json" ]]; then
         php -r 'json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);' "$scenario/package.json"
+    fi
+
+    if contains frontend "${selected[@]}"; then
+        php -r '
+            $composer = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
+            $package = json_decode(file_get_contents($argv[2]), true, 512, JSON_THROW_ON_ERROR);
+            $renovate = json_decode(file_get_contents($argv[3]), true, 512, JSON_THROW_ON_ERROR);
+
+            if (($composer["require-dev"]["pestphp/pest-plugin-browser"] ?? null) !== "^5.0") {
+                throw new RuntimeException("The generated Composer dependencies must install Pest Browser Testing.");
+            }
+
+            if (($package["packageManager"] ?? null) !== "nub@0.7.5") {
+                throw new RuntimeException("The generated packageManager must pin Nub 0.7.5.");
+            }
+
+            if (($package["devEngines"]["packageManager"] ?? null) !== [
+                "name" => "nub",
+                "version" => "^0.7.5",
+                "onFail" => "warn",
+            ]) {
+                throw new RuntimeException("The generated devEngines requirement must target Nub 0.7.5.");
+            }
+
+            if (($package["devDependencies"]["playwright"] ?? null) !== "^1.62.1") {
+                throw new RuntimeException("The generated frontend dependencies must install Playwright.");
+            }
+
+            if (! in_array("nub.lock", $renovate["includePaths"] ?? [], true)) {
+                throw new RuntimeException("Renovate must include the Nub lockfile.");
+            }
+        ' "$scenario/composer.json" "$scenario/package.json" "$scenario/.github/renovate.json"
+
+        [[ -f "$scenario/nub.jsonc" ]]
+        [[ -f "$scenario/tests/Browser/.gitkeep" ]]
+        [[ ! -e "$scenario/pnpm-workspace.yaml" ]]
+        grep -Fq '/tests/Browser/Screenshots' "$scenario/.gitignore"
+        grep -Fq '<testsuite name="Browser">' "$scenario/phpunit.xml"
+        grep -Fq '<directory>tests/Browser</directory>' "$scenario/phpunit.xml"
+        grep -Fq -- "->in('Browser', 'Feature', 'Integration', 'Unit');" "$scenario/tests/Pest.php"
+        grep -Fq 'nub exec playwright install --with-deps' "$scenario/.github/workflows/ci.yml"
     fi
 done
 

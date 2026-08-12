@@ -1,0 +1,38 @@
+name: Template feature combinations
+
+on:
+  push:
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  test-template:
+    name: Test template feature combinations
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Prepare composer dependencies
+        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
+        with:
+          artifact-mode: none
+          php-tools: ""
+          php-version: "8.5"
+
+      - name: Install trash CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes trash-cli
+
+      - name: Test template feature combinations
+        run: scripts/test-template-feature-combinations

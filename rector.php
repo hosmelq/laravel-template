@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Pest\Rector\Set\PestSetList;
 use Rector\Caching\ValueObject\Storage\FileCacheStorage;
 use Rector\CodingStyle\Rector\Catch_\CatchExceptionNameMatchingTypeRector;
 use Rector\Config\RectorConfig;
@@ -33,6 +34,7 @@ return RectorConfig::configure()
         rectorPreset: true
     )
     ->withSets([
+        PestSetList::CODING_STYLE,
         LaravelSetList::LARAVEL_130,
         LaravelSetList::LARAVEL_ARRAYACCESS_TO_METHOD_CALL,
         LaravelSetList::LARAVEL_CODE_QUALITY,

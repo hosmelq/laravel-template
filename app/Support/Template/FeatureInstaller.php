@@ -83,6 +83,7 @@ class FeatureInstaller
     private function deleteTemplateArtifacts(): void
     {
         $filesDeleted = $this->files->delete([
+            base_path('.github/workflows/template.yml'),
             base_path('README.md'),
             app_path('Console/Commands/InstallTemplateCommand.php'),
             app_path('Enums/TemplateFeature.php'),

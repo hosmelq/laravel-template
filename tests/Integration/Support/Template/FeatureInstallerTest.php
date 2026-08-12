@@ -23,6 +23,7 @@ it('applies every selected patch as one group and removes the installer after ag
     $files = $this->mock(Filesystem::class);
     $files->expects('delete')
         ->with([
+            base_path('.github/workflows/template.yml'),
             base_path('README.md'),
             app_path('Console/Commands/InstallTemplateCommand.php'),
             app_path('Enums/TemplateFeature.php'),
@@ -104,13 +105,12 @@ it('applies every selected patch as one group and removes the installer after ag
             '--ansi',
         ],
         ['composer', 'agent:setup'],
-    ]);
-
-    expect(array_slice($operations, -3))->toEqual([
-        'process:composer agent:setup',
-        'delete:files',
-        'delete:directory',
-    ]);
+    ])
+        ->and(array_slice($operations, -3))->toEqual([
+            'process:composer agent:setup',
+            'delete:files',
+            'delete:directory',
+        ]);
 });
 
 it('configures agent setup for non-interactive execution', function (): void {

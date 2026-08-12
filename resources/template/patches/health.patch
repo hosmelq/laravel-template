@@ -46,8 +46,8 @@ diff -ruN a/composer.json b/composer.json
 --- a/composer.json	2026-07-18 00:00:00
 +++ b/composer.json	2026-07-18 00:00:00
 @@ -22 +22,2 @@
-     "sentry/sentry-laravel": "^4.26.0",
-+    "spatie/laravel-health": "^1.40",
+     "sentry/sentry-laravel": "^4.27.0",
++    "spatie/laravel-health": "^1.40.2",
 diff -ruN a/config/health.php b/config/health.php
 --- a/config/health.php	1969-12-31 18:00:00
 +++ b/config/health.php	2026-07-17 23:35:13

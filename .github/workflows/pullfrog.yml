@@ -48,6 +48,8 @@ jobs:
 
       - name: Setup Nub
         uses: nubjs/setup-nub@47e5e7393d50f4e9544ddaf756aa277972afba2d # v0
+        with:
+          nub-version: '0.7.5'
 
       - name: Setup PHP
         uses: hosmelq/.github/.github/actions/php-setup@0e629f62b840abf1d0d07479e6efa99567293001
