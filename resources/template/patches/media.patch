@@ -97,6 +97,12 @@ diff -ruN a/boost.json b/boost.json
 @@ -16 +17,2 @@
 +        "medialibrary-development",
          "debug-using-debugbar"
+diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php	2026-08-15 00:00:00
++++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
+@@ -12 +12,2 @@
+         'laravel/tinker',
++        'league/flysystem-aws-s3-v3',
 diff -ruN a/composer.json b/composer.json
 --- a/composer.json	2026-07-18 00:00:00
 +++ b/composer.json	2026-07-18 00:00:00

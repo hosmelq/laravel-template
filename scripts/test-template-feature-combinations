@@ -36,6 +36,59 @@ contains() {
     return 1
 }
 
+validate_dependency_analyser_ignores() {
+    local configuration="$1"
+    shift
+
+    php -r '
+        $contents = file_get_contents($argv[1]);
+
+        if (! preg_match("/->ignoreErrorsOnPackages\\(\\[\\R(?<packages>.*?)\\R    \\], \\[ErrorType::UNUSED_DEPENDENCY\\]\\);/s", $contents, $matches)) {
+            throw new RuntimeException("Unable to read unused dependency ignores.");
+        }
+
+        preg_match_all("/'"'"'([^'"'"']+)'"'"'/", $matches["packages"], $packageMatches);
+
+        $expected = [
+            "laravel/tinker",
+            "propaganistas/laravel-phone",
+            "thecodingmachine/safe",
+            "tpetry/laravel-query-expressions",
+        ];
+        $selected = array_slice($argv, 2);
+
+        if (in_array("authentication", $selected, true)) {
+            $expected[] = "propaganistas/laravel-disposable-email";
+        }
+
+        if (in_array("frontend", $selected, true)) {
+            $expected[] = "inertiaui/modal";
+            $expected[] = "laravel/wayfinder";
+        }
+
+        if (in_array("media", $selected, true)) {
+            $expected[] = "league/flysystem-aws-s3-v3";
+        }
+
+        if (in_array("organizations", $selected, true)) {
+            $expected = array_values(array_diff($expected, ["thecodingmachine/safe"]));
+        }
+
+        $actual = $packageMatches[1];
+
+        sort($actual);
+        sort($expected);
+
+        if ($actual !== $expected) {
+            throw new RuntimeException(sprintf(
+                "Unexpected unused dependency ignores. Expected %s; found %s.",
+                json_encode($expected, JSON_THROW_ON_ERROR),
+                json_encode($actual, JSON_THROW_ON_ERROR),
+            ));
+        }
+    ' "$configuration" "$@"
+}
+
 trap cleanup EXIT
 
 git clone --no-hardlinks --quiet "$repository_root" "$checkout"
@@ -76,6 +129,8 @@ done
 
 readonly total=$(((1 << ${#features[@]}) - 1))
 
+validate_dependency_analyser_ignores "$checkout/composer-dependency-analyser.php"
+
 for ((mask = 1; mask <= total; mask++)); do
     selected=()
 
@@ -103,6 +158,8 @@ for ((mask = 1; mask <= total; mask++)); do
     git -C "$scenario" apply --unidiff-zero "${patches[@]}"
 
     php -r 'json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);' "$scenario/composer.json"
+
+    validate_dependency_analyser_ignores "$scenario/composer-dependency-analyser.php" "${selected[@]}"
 
     if [[ -f "$scenario/package.json" ]]; then
         php -r 'json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);' "$scenario/package.json"

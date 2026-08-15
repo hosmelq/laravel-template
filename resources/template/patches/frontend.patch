@@ -512,6 +512,13 @@ diff -ruN a/bootstrap/providers.php b/bootstrap/providers.php
 @@ -8 +9,2 @@
      AppServiceProvider::class,
 +    TypeScriptTransformerServiceProvider::class,
+diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php	2026-08-15 00:00:00
++++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
+@@ -12 +12,3 @@
++        'inertiaui/modal',
+         'laravel/tinker',
++        'laravel/wayfinder',
 diff -ruN a/composer.json b/composer.json
 --- a/composer.json	2026-07-18 00:00:00
 +++ b/composer.json	2026-07-18 00:00:00

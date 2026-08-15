@@ -396,6 +396,11 @@ diff -ruN -U0 a/app/Policies/OrganizationPolicy.php b/app/Policies/OrganizationP
 +        return $user->belongsToOrganization($organization);
 +    }
 +}
+diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php	2026-08-15 00:00:00
++++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
+@@ -14 +13,0 @@
+-        'thecodingmachine/safe',
 diff -ruN -U0 a/composer.json b/composer.json
 --- a/composer.json	2026-07-23 05:58:35
 +++ b/composer.json	2026-07-23 06:02:18

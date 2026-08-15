@@ -264,6 +264,12 @@ diff -ruN a/bootstrap/providers.php b/bootstrap/providers.php
 @@ -8 +9,2 @@
      AppServiceProvider::class,
 +    FortifyServiceProvider::class,
+diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php	2026-08-15 00:00:00
++++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
+@@ -13 +13,2 @@
++        'propaganistas/laravel-disposable-email',
+         'propaganistas/laravel-phone',
 diff -ruN a/composer.json b/composer.json
 --- a/composer.json	2026-07-18 00:00:00
 +++ b/composer.json	2026-07-18 00:00:00
