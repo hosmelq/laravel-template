@@ -100,31 +100,15 @@
     "post-root-package-install": [
       "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
     ],
-    "agent:setup": [
-      "@php artisan boost:install --env=local --ansi --guidelines --mcp --skills --no-interaction",
-      "nubx -y skills experimental_install"
-    ],
-    "fresh": "@php artisan migrate:fresh --seed",
     "phpstan": "phpstan analyse --memory-limit=4G",
     "pint": "pint",
     "rector": "rector",
-    "setup": [
-      "composer install",
-      "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
-      "@php -r \"file_exists('.env.testing') || copy('.env.testing.example', '.env.testing');\"",
-      "@php artisan key:generate",
-      "@php artisan key:generate --env=testing",
-      "@php artisan migrate --force"
-    ],
     "test": "@php artisan test"
   },
   "scripts-descriptions": {
-    "agent:setup": "Runs project agent setup.",
-    "fresh": "Runs migrate:fresh and db:seed.",
     "phpstan": "Runs PHPStan analyse.",
     "pint": "Runs Pint.",
     "rector": "Runs Rector.",
-    "setup": "Installs dependencies, prepares environment files and keys, runs migrations, and builds frontend assets.",
     "test": "Runs the application tests."
   },
   "$schema": "https://getcomposer.org/schema.json"

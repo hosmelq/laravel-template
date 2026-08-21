@@ -126,7 +126,7 @@ class FeatureInstaller
             $this->run(['nub', 'install'], 'The frontend dependencies could not be installed.', forever: true);
         }
 
-        $this->run(['composer', 'agent:setup'], 'The agent setup could not be completed.', forever: true);
+        $this->run(['mise', 'run', 'agent:setup'], 'The agent setup could not be completed.', forever: true);
     }
 
     private function isInstalled(TemplateFeature $feature): bool

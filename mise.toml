@@ -1,0 +1,54 @@
+[bootstrap.packages]
+# cc and make are provided by Xcode Command Line Tools: xcode-select --install
+"brew:autoconf" = { os = "macos", version = "latest" }
+"brew:bison" = { os = "macos", version = "latest" }
+"brew:curl" = { os = "macos", version = "latest" }
+"brew:freetype" = { os = "macos", version = "latest" }
+"brew:icu4c@78" = { os = "macos", version = "latest" }
+"brew:jpeg-turbo" = { os = "macos", version = "latest" }
+"brew:libiconv" = { os = "macos", version = "latest" }
+"brew:libpng" = { os = "macos", version = "latest" }
+"brew:libpq" = { os = "macos", version = "latest" }
+"brew:libxml2" = { os = "macos", version = "latest" }
+"brew:libzip" = { os = "macos", version = "latest" }
+"brew:oniguruma" = { os = "macos", version = "latest" }
+"brew:openssl@3" = { os = "macos", version = "latest" }
+"brew:pkgconf" = { os = "macos", version = "latest" }
+"brew:readline" = { os = "macos", version = "latest" }
+"brew:re2c" = { os = "macos", version = "latest" }
+"brew:webp" = { os = "macos", version = "latest" }
+
+[hooks]
+enter = "mise install"
+
+[settings]
+minimum_release_age = "1d"
+
+[tasks."agent:setup"]
+description = "Runs project agent setup."
+run = [
+  "php artisan boost:install --ansi --env=local --guidelines --mcp --no-interaction --skills",
+  "nubx -y skills experimental_install",
+]
+
+[tasks."db:fresh"]
+description = "Runs migrate:fresh and db:seed."
+run = "php artisan migrate:fresh --seed"
+
+[tasks.dev]
+description = "Starts the application development processes."
+run = "php artisan dev"
+
+[tasks.setup]
+description = "Installs dependencies, prepares environment files and keys, and runs migrations."
+run = [
+  "composer install",
+  "test -f .env || (cp .env.example .env && php artisan key:generate)",
+  "test -f .env.testing || (cp .env.testing.example .env.testing && php artisan key:generate --env=testing)",
+  "php artisan migrate --force",
+]
+
+[tools]
+node = "26"
+nub = "0.7.5"
+php = { install_env = { PHP_EXTRA_CONFIGURE_OPTIONS = "--with-zip" }, version = "8.5" }

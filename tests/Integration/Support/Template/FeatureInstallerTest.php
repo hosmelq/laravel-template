@@ -104,24 +104,13 @@ it('applies every selected patch as one group and removes the installer after ag
             'package:discover',
             '--ansi',
         ],
-        ['composer', 'agent:setup'],
+        ['mise', 'run', 'agent:setup'],
     ])
         ->and(array_slice($operations, -3))->toEqual([
-            'process:composer agent:setup',
+            'process:mise run agent:setup',
             'delete:files',
             'delete:directory',
         ]);
-});
-
-it('configures agent setup for non-interactive execution', function (): void {
-    $composer = json_decode(
-        file_get_contents(base_path('composer.json')),
-        true,
-        512,
-        JSON_THROW_ON_ERROR
-    );
-
-    expect($composer['scripts']['agent:setup'])->toContain('nubx -y skills experimental_install');
 });
 
 it('preserves non-empty directories when removing the installer', function (): void {
@@ -149,7 +138,7 @@ it('preserves non-empty directories when removing the installer', function (): v
 
 it('preserves the installer when agent setup fails', function (): void {
     Process::fake(function (PendingProcess $process): FakeProcessResult {
-        if ($process->command === ['composer', 'agent:setup']) {
+        if ($process->command === ['mise', 'run', 'agent:setup']) {
             return Process::result(
                 errorOutput: 'Agent setup failed.',
                 exitCode: 1
