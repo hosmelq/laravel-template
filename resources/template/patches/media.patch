@@ -1,6 +1,7 @@
-diff -ruN a/app/Listeners/SetMediaDimensions.php b/app/Listeners/SetMediaDimensions.php
---- a/app/Listeners/SetMediaDimensions.php	1969-12-31 18:00:00
-+++ b/app/Listeners/SetMediaDimensions.php	2026-07-17 23:35:13
+diff --git a/app/Listeners/SetMediaDimensions.php b/app/Listeners/SetMediaDimensions.php
+new file mode 100644
+--- /dev/null
++++ b/app/Listeners/SetMediaDimensions.php
 @@ -0,0 +1,35 @@
 +<?php
 +
@@ -37,9 +38,10 @@ diff -ruN a/app/Listeners/SetMediaDimensions.php b/app/Listeners/SetMediaDimensi
 +        }
 +    }
 +}
-diff -ruN a/app/Support/Media/FileNamer.php b/app/Support/Media/FileNamer.php
---- a/app/Support/Media/FileNamer.php	1969-12-31 18:00:00
-+++ b/app/Support/Media/FileNamer.php	2026-07-17 23:35:13
+diff --git a/app/Support/Media/FileNamer.php b/app/Support/Media/FileNamer.php
+new file mode 100644
+--- /dev/null
++++ b/app/Support/Media/FileNamer.php
 @@ -0,0 +1,18 @@
 +<?php
 +
@@ -59,9 +61,10 @@ diff -ruN a/app/Support/Media/FileNamer.php b/app/Support/Media/FileNamer.php
 +        return (string) Str::uuid();
 +    }
 +}
-diff -ruN a/app/Support/Media/PathGenerator.php b/app/Support/Media/PathGenerator.php
---- a/app/Support/Media/PathGenerator.php	1969-12-31 18:00:00
-+++ b/app/Support/Media/PathGenerator.php	2026-07-17 23:35:13
+diff --git a/app/Support/Media/PathGenerator.php b/app/Support/Media/PathGenerator.php
+new file mode 100644
+--- /dev/null
++++ b/app/Support/Media/PathGenerator.php
 @@ -0,0 +1,25 @@
 +<?php
 +
@@ -88,37 +91,44 @@ diff -ruN a/app/Support/Media/PathGenerator.php b/app/Support/Media/PathGenerato
 +        return $media->uuid;
 +    }
 +}
-diff -ruN a/boost.json b/boost.json
---- a/boost.json	2026-07-18 00:00:00
-+++ b/boost.json	2026-07-18 00:00:00
-@@ -10 +10,2 @@
+diff --git a/boost.json b/boost.json
+--- a/boost.json
++++ b/boost.json
+@@ -10,1 +10,2 @@
+-        "fruitcake/laravel-debugbar"
 +        "spatie/laravel-medialibrary",
-         "fruitcake/laravel-debugbar"
-@@ -16 +17,2 @@
++        "fruitcake/laravel-debugbar"
+@@ -14,1 +15,2 @@
+-        "infer-conventions",
 +        "medialibrary-development",
-         "debug-using-debugbar"
-diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
---- a/composer-dependency-analyser.php	2026-08-15 00:00:00
-+++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
-@@ -12 +12,2 @@
-         'laravel/tinker',
++        "infer-conventions",
+diff --git a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php
++++ b/composer-dependency-analyser.php
+@@ -13,1 +13,2 @@
+-        'propaganistas/laravel-phone',
 +        'league/flysystem-aws-s3-v3',
-diff -ruN a/composer.json b/composer.json
---- a/composer.json	2026-07-18 00:00:00
-+++ b/composer.json	2026-07-18 00:00:00
-@@ -19 +19,2 @@
-     "hosmelq/name-of-person": "^0.3.0",
++        'propaganistas/laravel-phone',
+diff --git a/composer.json b/composer.json
+--- a/composer.json
++++ b/composer.json
+@@ -20,1 +20,2 @@
+-    "laravel/framework": "^13.33.0",
 +    "intervention/image": "^4.2.1",
-@@ -21 +22,2 @@
-     "laravel/tinker": "^3.0.2",
++    "laravel/framework": "^13.33.0",
+@@ -22,1 +23,2 @@
+-    "propaganistas/laravel-phone": "^6.0.3",
 +    "league/flysystem-aws-s3-v3": "^3.35.2",
-@@ -24 +26,2 @@
-+    "spatie/laravel-medialibrary": "^11.23.4",
-     "thecodingmachine/safe": "^3.4",
-diff -ruN a/config/media-library.php b/config/media-library.php
---- a/config/media-library.php	1969-12-31 18:00:00
-+++ b/config/media-library.php	2026-07-17 23:35:13
-@@ -0,0 +1,330 @@
++    "propaganistas/laravel-phone": "^6.0.3",
+@@ -24,1 +26,2 @@
+-    "sqids/sqids": "^0.5",
++    "spatie/laravel-medialibrary": "^11.23.8",
++    "sqids/sqids": "^0.5",
+diff --git a/config/media-library.php b/config/media-library.php
+new file mode 100644
+--- /dev/null
++++ b/config/media-library.php
+@@ -0,0 +1,345 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -140,6 +150,7 @@ diff -ruN a/config/media-library.php b/config/media-library.php
 +use Spatie\MediaLibrary\Conversions\ImageGenerators\Webp;
 +use Spatie\MediaLibrary\Conversions\Jobs\PerformConversionsJob;
 +use Spatie\MediaLibrary\Downloaders\HttpFacadeDownloader;
++use Spatie\MediaLibrary\MediaCollections\FileAdder;
 +use Spatie\MediaLibrary\MediaCollections\Models\Media;
 +use Spatie\MediaLibrary\MediaCollections\Models\Observers\MediaObserver;
 +use Spatie\MediaLibrary\ResponsiveImages\Jobs\GenerateResponsiveImagesJob;
@@ -157,10 +168,24 @@ diff -ruN a/config/media-library.php b/config/media-library.php
 +    'disk_name' => env('MEDIA_DISK', 'public'),
 +
 +    /*
++     * Store conversions separately when originals live on a remote disk.
++     * A null value keeps conversions on the original media disk.
++     */
++    'conversions_disk_name' => env('MEDIA_CONVERSIONS_DISK'),
++
++    /*
 +     * The maximum file size of an item in bytes.
 +     * Adding a larger file will result in an exception.
 +     */
 +    'max_file_size' => 1024 * 1024 * 10, // 10MB
++
++    /*
++     * Reject dangerous extensions anywhere in the uploaded file name.
++     * The optional allowlist applies to the final extension only.
++     */
++    'disallowed_extensions' => FileAdder::$defaultDisallowedExtensions,
++
++    'allowed_extensions' => null,
 +
 +    /*
 +     * This queue connection will be used to generate derived and responsive images.
@@ -449,9 +474,10 @@ diff -ruN a/config/media-library.php b/config/media-library.php
 +     */
 +    'force_lazy_loading' => env('FORCE_MEDIA_LIBRARY_LAZY_LOADING', true),
 +];
-diff -ruN a/database/migrations/2025_07_04_233806_create_media_table.php b/database/migrations/2025_07_04_233806_create_media_table.php
---- a/database/migrations/2025_07_04_233806_create_media_table.php	1969-12-31 18:00:00
-+++ b/database/migrations/2025_07_04_233806_create_media_table.php	2026-07-17 23:35:13
+diff --git a/database/migrations/2025_07_04_233806_create_media_table.php b/database/migrations/2025_07_04_233806_create_media_table.php
+new file mode 100644
+--- /dev/null
++++ b/database/migrations/2025_07_04_233806_create_media_table.php
 @@ -0,0 +1,33 @@
 +<?php
 +
@@ -486,9 +512,10 @@ diff -ruN a/database/migrations/2025_07_04_233806_create_media_table.php b/datab
 +        });
 +    }
 +};
-diff -ruN a/tests/Integration/Listeners/SetMediaDimensionsTest.php b/tests/Integration/Listeners/SetMediaDimensionsTest.php
---- a/tests/Integration/Listeners/SetMediaDimensionsTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Listeners/SetMediaDimensionsTest.php	2026-07-17 23:35:13
+diff --git a/tests/Integration/Listeners/SetMediaDimensionsTest.php b/tests/Integration/Listeners/SetMediaDimensionsTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Listeners/SetMediaDimensionsTest.php
 @@ -0,0 +1,24 @@
 +<?php
 +
@@ -514,9 +541,10 @@ diff -ruN a/tests/Integration/Listeners/SetMediaDimensionsTest.php b/tests/Integ
 +    expect($media->getCustomProperty('height'))->toBe(200)
 +        ->and($media->getCustomProperty('width'))->toBe(200);
 +});
-diff -ruN a/tests/Integration/Support/Media/FileNamerTest.php b/tests/Integration/Support/Media/FileNamerTest.php
---- a/tests/Integration/Support/Media/FileNamerTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Support/Media/FileNamerTest.php	2026-07-17 23:35:13
+diff --git a/tests/Integration/Support/Media/FileNamerTest.php b/tests/Integration/Support/Media/FileNamerTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Support/Media/FileNamerTest.php
 @@ -0,0 +1,20 @@
 +<?php
 +
@@ -538,9 +566,10 @@ diff -ruN a/tests/Integration/Support/Media/FileNamerTest.php b/tests/Integratio
 +    expect(Str::isUuid(pathinfo($media->file_name, PATHINFO_FILENAME)))->toBeTrue()
 +        ->and(pathinfo($media->file_name, PATHINFO_EXTENSION))->toBe('png');
 +});
-diff -ruN a/tests/Integration/Support/Media/PathGeneratorTest.php b/tests/Integration/Support/Media/PathGeneratorTest.php
---- a/tests/Integration/Support/Media/PathGeneratorTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Support/Media/PathGeneratorTest.php	2026-07-17 23:35:13
+diff --git a/tests/Integration/Support/Media/PathGeneratorTest.php b/tests/Integration/Support/Media/PathGeneratorTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Support/Media/PathGeneratorTest.php
 @@ -0,0 +1,36 @@
 +<?php
 +
@@ -578,69 +607,37 @@ diff -ruN a/tests/Integration/Support/Media/PathGeneratorTest.php b/tests/Integr
 +
 +    expect(Str::startsWith($path, 'uploads/'.$media->uuid.'/'))->toBeTrue();
 +});
-diff -ruN a/tests/Support/Models/TestModel.php b/tests/Support/Models/TestModel.php
---- a/tests/Support/Models/TestModel.php	1969-12-31 18:00:00
-+++ b/tests/Support/Models/TestModel.php	2026-07-17 23:35:13
-@@ -0,0 +1,16 @@
-+<?php
-+
-+declare(strict_types=1);
-+
-+namespace Tests\Support\Models;
-+
-+use Illuminate\Database\Eloquent\Attributes\Table;
-+use Illuminate\Database\Eloquent\Model;
+diff --git a/tests/Support/Models/TestModel.php b/tests/Support/Models/TestModel.php
+--- a/tests/Support/Models/TestModel.php
++++ b/tests/Support/Models/TestModel.php
+@@ -11,1 +11,3 @@
+-use Illuminate\Database\Eloquent\SoftDeletes;
++use Illuminate\Database\Eloquent\SoftDeletes;
 +use Spatie\MediaLibrary\HasMedia;
 +use Spatie\MediaLibrary\InteractsWithMedia;
-+
-+#[Table(name: 'test_models', timestamps: false)]
+@@ -14 +16 @@
+-class TestModel extends Model
 +class TestModel extends Model implements HasMedia
-+{
+@@ -17,1 +19,2 @@
+-    use SoftDeletes;
 +    use InteractsWithMedia;
-+}
-diff -ruN a/tests/TestCase.php b/tests/TestCase.php
---- a/tests/TestCase.php	2026-07-18 06:29:29
-+++ b/tests/TestCase.php	2026-07-17 23:35:13
-@@ -4,11 +4,13 @@
- 
- namespace Tests;
- 
++    use SoftDeletes;
+diff --git a/tests/TestCase.php b/tests/TestCase.php
+--- a/tests/TestCase.php
++++ b/tests/TestCase.php
+@@ -7,1 +7,2 @@
+-use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 +use Illuminate\Database\Eloquent\Relations\Relation;
- use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
- use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
- use Illuminate\Foundation\Testing\WithCachedConfig;
- use Illuminate\Foundation\Testing\WithCachedRoutes;
- use Illuminate\Support\Facades\Http;
++use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+@@ -11,1 +12,2 @@
+-use Illuminate\Support\Facades\Http;
++use Illuminate\Support\Facades\Http;
 +use Tests\Support\Models\TestModel;
- 
- abstract class TestCase extends BaseTestCase
- {
-@@ -34,5 +36,8 @@
- 
-         Http::preventStrayRequests();
- 
+@@ -37,2 +39,5 @@
+-    }
+-}
 +        Relation::enforceMorphMap([
 +            'test_model' => TestModel::class,
 +        ]);
-     }
- }
-diff -ruN a/tests/migrations/2025_01_07_195254_create_test_models_table.php b/tests/migrations/2025_01_07_195254_create_test_models_table.php
---- a/tests/migrations/2025_01_07_195254_create_test_models_table.php	1969-12-31 18:00:00
-+++ b/tests/migrations/2025_01_07_195254_create_test_models_table.php	2026-07-17 23:35:13
-@@ -0,0 +1,16 @@
-+<?php
-+
-+declare(strict_types=1);
-+
-+use Illuminate\Database\Migrations\Migration;
-+use Illuminate\Database\Schema\Blueprint;
-+use Illuminate\Support\Facades\Schema;
-+
-+return new class () extends Migration {
-+    public function up(): void
-+    {
-+        Schema::create('test_models', function (Blueprint $table): void {
-+            $table->id();
-+        });
 +    }
-+};
++}

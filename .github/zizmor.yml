@@ -1,7 +1,4 @@
 rules:
-  unpinned-images:
-    ignore:
-      - pullfrog.yml:28
   unpinned-uses:
     config:
       policies:

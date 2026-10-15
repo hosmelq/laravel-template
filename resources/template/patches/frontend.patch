@@ -1,54 +1,66 @@
-diff -ruN a/.github/renovate.json b/.github/renovate.json
---- a/.github/renovate.json	2026-07-18 06:31:34
-+++ b/.github/renovate.json	2026-07-17 23:35:13
-@@ -1,12 +1,14 @@
- {
-   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-   "dependencyDashboard": true,
--  "enabledManagers": ["composer", "github-actions"],
-+  "enabledManagers": ["composer", "github-actions", "npm"],
-   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
-   "includePaths": [
-     ".github/workflows/**",
-     "composer.json",
--    "composer.lock"
-+    "composer.lock",
-+    "package.json",
-+    "nub.lock"
-   ],
-   "packageRules": [
-     {
-@@ -20,8 +22,8 @@
-       "matchManagers": ["composer"]
-     },
-     {
--      "groupName": "composer dependencies",
--      "matchManagers": ["composer"],
-+      "groupName": "composer and npm dependencies",
-+      "matchManagers": ["composer", "npm"],
-       "postUpdateOptions": ["composerWithAll"],
-       "rangeStrategy": "bump"
-     },
-diff -ruN a/.github/workflows/ci.yml b/.github/workflows/ci.yml
---- a/.github/workflows/ci.yml	2026-07-18 06:31:34
-+++ b/.github/workflows/ci.yml	2026-07-17 23:35:13
-@@ -108,6 +108,29 @@
-         with:
-           persist-credentials: false
- 
+diff --git a/.github/renovate.json b/.github/renovate.json
+--- a/.github/renovate.json
++++ b/.github/renovate.json
+@@ -5,3 +5,13 @@
+-      "customType": "regex",
+-      "datasourceTemplate": "github-releases",
+-      "depNameTemplate": "jdx/mise",
++      "customType": "jsonata",
++      "datasourceTemplate": "npm",
++      "fileFormat": "json",
++      "managerFilePatterns": ["/^package\\.json$/"],
++      "matchStrings": [
++        "devEngines.packageManager[name = 'nub'].{'currentValue': version, 'depName': 'nub', 'depType': 'packageManager', 'packageName': '@nubjs/nub'}"
++      ],
++      "versioningTemplate": "npm"
++    },
++    {
++      "customType": "regex",
++      "datasourceTemplate": "github-releases",
++      "depNameTemplate": "jdx/mise",
+@@ -37 +47,8 @@
+-  "enabledManagers": ["composer", "custom.regex", "github-actions", "mise"],
++  "enabledManagers": [
++    "composer",
++    "custom.jsonata",
++    "custom.regex",
++    "github-actions",
++    "mise",
++    "npm"
++  ],
+@@ -44 +61 @@
+-  "includePaths": [".github/workflows/**", "composer.json", "mise.toml"],
++  "includePaths": [".github/workflows/**", "composer.json", "mise.toml", "package.json"],
+@@ -59,1 +76,5 @@
+-      "rangeStrategy": "bump"
++      "rangeStrategy": "bump"
++    },
++    {
++      "matchManagers": ["custom.jsonata", "npm"],
++      "rangeStrategy": "bump"
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -17,1 +17,3 @@
+-  PHP_VERSION: '8.5'
++  NODE_VERSION: '26.10.0'
++  NUB_VERSION: '0.9.5'
++  PHP_VERSION: '8.5'
+@@ -54,1 +56,24 @@
+-      - name: Check PHP code style
 +      - name: Prepare composer dependencies
-+        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
++        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50
 +        with:
 +          artifact-mode: download
 +          artifact-name: php-vendor
 +          php-tools: ''
-+          php-version: '8.5'
++          php-version: ${{ env.PHP_VERSION }}
 +
 +      - name: Install npm dependencies
-+        uses: hosmelq/.github/.github/actions/npm-install@0e629f62b840abf1d0d07479e6efa99567293001
++        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50
 +        with:
-+          node-version: '26'
-+          nub-version: '0.7.5'
++          node-version: ${{ env.NODE_VERSION }}
++          nub-version: ${{ env.NUB_VERSION }}
 +
 +      - name: Generate TypeScript definitions
 +        run: nub run prebuild
@@ -59,24 +71,16 @@ diff -ruN a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +      - name: Check JavaScript format
 +        run: nub run fmt:check
 +
-       - name: Check PHP code style
-         uses: hosmelq/.github/.github/actions/php-pint-check@0e629f62b840abf1d0d07479e6efa99567293001
-         with:
-@@ -137,8 +149,8 @@
-           php-tools: ''
-           php-version: '8.5'
- 
--  tests:
--    name: Tests (Shard ${{ matrix.shard }}/4)
++      - name: Check PHP code style
+@@ -125,1 +150,40 @@
+-  php-dependencies:
 +  frontend-build:
 +    name: Frontend build
- 
-     runs-on: ubuntu-latest
- 
-@@ -150,6 +162,45 @@
-       - check-unused-composer-dependencies
-       - php-dependencies
- 
++
++    runs-on: ubuntu-latest
++
++    needs: php-dependencies
++
 +    steps:
 +      - name: Checkout
 +        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -84,18 +88,18 @@ diff -ruN a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +          persist-credentials: false
 +
 +      - name: Prepare composer dependencies
-+        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
++        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50
 +        with:
 +          artifact-mode: download
 +          artifact-name: php-vendor
 +          php-tools: ''
-+          php-version: '8.5'
++          php-version: ${{ env.PHP_VERSION }}
 +
 +      - name: Install npm dependencies
-+        uses: hosmelq/.github/.github/actions/npm-install@0e629f62b840abf1d0d07479e6efa99567293001
++        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50
 +        with:
-+          node-version: '26'
-+          nub-version: '0.7.5'
++          node-version: ${{ env.NODE_VERSION }}
++          nub-version: ${{ env.NUB_VERSION }}
 +
 +      - name: Build frontend
 +        run: nub run build
@@ -109,68 +113,56 @@ diff -ruN a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +            public/build
 +          retention-days: 1
 +
-+  tests:
-+    name: Tests (Shard ${{ matrix.shard }}/4)
-+
-+    runs-on: ubuntu-latest
-+
++  php-dependencies:
+@@ -151 +215 @@
+-    needs: php-dependencies
 +    needs: [frontend-build, php-dependencies]
-+
-     strategy:
-       fail-fast: false
-       matrix:
-@@ -177,6 +228,21 @@
-           artifact-name: php-vendor
-           php-tools: ''
-           php-version: '8.5'
-+
+@@ -181,1 +245,16 @@
+-      - name: Setup problem matchers
 +      - name: Download frontend artifact
 +        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
 +        with:
 +          name: frontend-build
-+          path: .
++          path: public/build
 +
 +      - name: Install npm dependencies
-+        uses: hosmelq/.github/.github/actions/npm-install@0e629f62b840abf1d0d07479e6efa99567293001
++        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50
 +        with:
-+          node-version: '26'
-+          nub-version: '0.7.5'
++          node-version: ${{ env.NODE_VERSION }}
++          nub-version: ${{ env.NUB_VERSION }}
 +
 +      - name: Install Playwright browsers
 +        run: nub exec playwright install --with-deps
- 
-       - name: Setup problem matchers
-         run: |
-diff -ruN a/.gitignore b/.gitignore
---- a/.gitignore	2026-07-18 06:29:29
-+++ b/.gitignore	2026-07-17 23:35:13
-@@ -24,0 +25 @@
++
++      - name: Setup problem matchers
+diff --git a/.github/workflows/update-generated-files.yml b/.github/workflows/update-generated-files.yml
+--- a/.github/workflows/update-generated-files.yml
++++ b/.github/workflows/update-generated-files.yml
+@@ -49,1 +49,4 @@
+-      - name: Update Laravel Boost guidelines
++      - name: Install npm dependencies
++        run: nub install --ignore-scripts --no-frozen-lockfile
++
++      - name: Update Laravel Boost guidelines
+diff --git a/.gitignore b/.gitignore
+--- a/.gitignore
++++ b/.gitignore
+@@ -25,1 +25,2 @@
+-/vendor
 +/tests/Browser/Screenshots
-diff -ruN a/nub.jsonc b/nub.jsonc
---- a/nub.jsonc	1969-12-31 18:00:00
-+++ b/nub.jsonc	2026-07-17 23:35:13
-@@ -0,0 +1,12 @@
-+{
-+  "$schema": "https://nubjs.com/schema/v0.7.json",
-+  "install": {
-+    "publicHoist": [
-+      "@heroui/*",
-+      "@inertiajs/*",
-+      "@internationalized/date",
-+      "@react-types/*",
-+      "react-aria-components",
-+    ],
-+  },
-+}
-diff -ruN a/.oxfmtrc.json b/.oxfmtrc.json
---- a/.oxfmtrc.json	1969-12-31 18:00:00
-+++ b/.oxfmtrc.json	2026-07-17 23:35:13
-@@ -0,0 +1,31 @@
++/vendor
+diff --git a/.oxfmtrc.json b/.oxfmtrc.json
+new file mode 100644
+--- /dev/null
++++ b/.oxfmtrc.json
+@@ -0,0 +1,33 @@
 +{
 +  "$schema": "./node_modules/oxfmt/configuration_schema.json",
 +  "bracketSpacing": false,
 +  "ignorePatterns": [
++    ".mcp.json",
 +    "AGENTS.md",
++    "CLAUDE.md",
 +    "boost.json",
 +    "opencode.json",
 +    "resources/react-email/.react-email",
@@ -197,9 +189,10 @@ diff -ruN a/.oxfmtrc.json b/.oxfmtrc.json
 +    "stylesheet": "./resources/js/index.css"
 +  }
 +}
-diff -ruN a/.oxlintrc.json b/.oxlintrc.json
---- a/.oxlintrc.json	1969-12-31 18:00:00
-+++ b/.oxlintrc.json	2026-07-17 23:35:13
+diff --git a/.oxlintrc.json b/.oxlintrc.json
+new file mode 100644
+--- /dev/null
++++ b/.oxlintrc.json
 @@ -0,0 +1,12 @@
 +{
 +  "$schema": "./node_modules/oxlint/configuration_schema.json",
@@ -213,9 +206,10 @@ diff -ruN a/.oxlintrc.json b/.oxlintrc.json
 +    "import/no-cycle": "error"
 +  }
 +}
-diff -ruN a/app/Enums/FlashKey.php b/app/Enums/FlashKey.php
---- a/app/Enums/FlashKey.php	1969-12-31 18:00:00
-+++ b/app/Enums/FlashKey.php	2026-07-17 23:35:13
+diff --git a/app/Enums/FlashKey.php b/app/Enums/FlashKey.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/FlashKey.php
 @@ -0,0 +1,19 @@
 +<?php
 +
@@ -236,9 +230,45 @@ diff -ruN a/app/Enums/FlashKey.php b/app/Enums/FlashKey.php
 +
 +    case Toast = 'toast';
 +}
-diff -ruN a/app/Enums/ToastVariant.php b/app/Enums/ToastVariant.php
---- a/app/Enums/ToastVariant.php	1969-12-31 18:00:00
-+++ b/app/Enums/ToastVariant.php	2026-07-17 23:35:13
+diff --git a/app/Enums/Locale.php b/app/Enums/Locale.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/Locale.php
+@@ -0,0 +1,30 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums;
++
++use ArchTech\Enums\InvokableCases;
++use ArchTech\Enums\Values;
++
++/**
++ * @method static string English()
++ * @method static string Spanish()
++ * @method static string[] values()
++ */
++enum Locale: string
++{
++    use InvokableCases;
++    use Values;
++
++    case English = 'en';
++    case Spanish = 'es';
++
++    public function languageTag(): string
++    {
++        return match ($this) {
++            self::English => 'en-US',
++            self::Spanish => 'es-419',
++        };
++    }
++}
+diff --git a/app/Enums/ToastVariant.php b/app/Enums/ToastVariant.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/ToastVariant.php
 @@ -0,0 +1,18 @@
 +<?php
 +
@@ -258,18 +288,21 @@ diff -ruN a/app/Enums/ToastVariant.php b/app/Enums/ToastVariant.php
 +    case Success = 'success';
 +    case Warning = 'warning';
 +}
-diff -ruN a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/HandleInertiaRequests.php
---- a/app/Http/Middleware/HandleInertiaRequests.php	1969-12-31 18:00:00
-+++ b/app/Http/Middleware/HandleInertiaRequests.php	2026-07-17 23:35:13
-@@ -0,0 +1,34 @@
+diff --git a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/HandleInertiaRequests.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Middleware/HandleInertiaRequests.php
+@@ -0,0 +1,37 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Http\Middleware;
 +
++use App\Enums\Locale;
 +use Illuminate\Http\Request;
 +use Illuminate\Http\Resources\Json\JsonResource;
++use Illuminate\Support\Facades\App;
 +use Inertia\Middleware;
 +use Override;
 +
@@ -281,6 +314,7 @@ diff -ruN a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/
 +        return [
 +            ...parent::share($request),
 +            'auth' => $this->authProperties($request),
++            'locale' => Locale::from(App::getLocale())->languageTag(),
 +        ];
 +    }
 +
@@ -296,9 +330,49 @@ diff -ruN a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/
 +        ];
 +    }
 +}
-diff -ruN a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResource.php
---- a/app/Http/Resources/UserResource.php	1969-12-31 18:00:00
-+++ b/app/Http/Resources/UserResource.php	2026-07-17 23:35:13
+diff --git a/app/Http/Middleware/SetLocale.php b/app/Http/Middleware/SetLocale.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Middleware/SetLocale.php
+@@ -0,0 +1,34 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Middleware;
++
++use App\Enums\Locale;
++use Closure;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\App;
++use Illuminate\Support\Facades\Cookie;
++use Symfony\Component\HttpFoundation\Response;
++
++class SetLocale
++{
++    /**
++     * @param Closure(Request): Response $next
++     */
++    public function handle(Request $request, Closure $next): Response
++    {
++        $cookieLocale = $request->cookie('locale');
++        $locale = is_string($cookieLocale) ? Locale::tryFrom($cookieLocale) : null;
++
++        if ($locale === null) {
++            $locale = Locale::from($request->getPreferredLanguage(Locale::values()) ?? Locale::English());
++
++            Cookie::queue(Cookie::forever('locale', $locale->value));
++        }
++
++        App::setLocale($locale->value);
++
++        return $next($request);
++    }
++}
+diff --git a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResource.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Resources/UserResource.php
 @@ -0,0 +1,39 @@
 +<?php
 +
@@ -331,7 +405,7 @@ diff -ruN a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResourc
 +            'created_at' => $this->resource->created_at,
 +            'email' => $this->resource->email,
 +            'first_name' => $this->resource->first_name,
-+            'id' => $this->resource->id,
++            'id' => $this->resource->sqid,
 +            'is_email_verified' => $this->resource->email_verified_at !== null,
 +            'last_name' => $this->resource->last_name,
 +            'name' => $this->resource->name,
@@ -339,39 +413,40 @@ diff -ruN a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResourc
 +        ];
 +    }
 +}
-diff -ruN a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
---- a/app/Providers/AppServiceProvider.php	2026-07-18 00:00:00
-+++ b/app/Providers/AppServiceProvider.php	2026-07-18 00:00:00
-@@ -5,3 +5,5 @@
- namespace App\Providers;
- 
+diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
+--- a/app/Providers/AppServiceProvider.php
++++ b/app/Providers/AppServiceProvider.php
+@@ -7,1 +7,3 @@
+-use App\Models\User;
 +use App\Enums\FlashKey;
 +use App\Enums\ToastVariant;
- use App\Models\User;
-@@ -12,2 +14,3 @@
- use Illuminate\Foundation\Http\FormRequest;
++use App\Models\User;
+@@ -13,1 +15,2 @@
+-use Illuminate\Http\Request;
 +use Illuminate\Http\RedirectResponse;
- use Illuminate\Http\Request;
-@@ -17,2 +20,3 @@
- use Illuminate\Support\Facades\URL;
++use Illuminate\Http\Request;
+@@ -19,1 +22,2 @@
+-use Illuminate\Support\ServiceProvider;
 +use Illuminate\Support\Facades\Vite;
- use Illuminate\Support\ServiceProvider;
-@@ -20,2 +24,3 @@
- use Illuminate\Validation\Rules\Password;
++use Illuminate\Support\ServiceProvider;
+@@ -21,1 +25,2 @@
+-use Sentry\Laravel\Integration;
 +use Inertia\Inertia;
- use Sentry\Laravel\Integration;
-@@ -32,3 +37,5 @@
-         $this->configureResources();
++use Sentry\Laravel\Integration;
+@@ -34,1 +39,2 @@
+-        $this->configureUrls();
 +        $this->configureRouteMacros();
-         $this->configureUrls();
++        $this->configureUrls();
+@@ -35,3 +41,4 @@
+-    }
+-
+-    private function configureCommands(): void
 +        $this->configureVite();
-     }
-@@ -87,10 +94,34 @@
-     private function configureResources(): void
-     {
-         JsonResource::withoutWrapping();
-     }
- 
++    }
++
++    private function configureCommands(): void
+@@ -92,1 +99,20 @@
+-    private function configureUrls(): void
 +    private function configureRouteMacros(): void
 +    {
 +        RedirectResponse::macro('toast', function (
@@ -391,19 +466,19 @@ diff -ruN a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvi
 +        });
 +    }
 +
-     private function configureUrls(): void
-     {
-         URL::forceHttps(! $this->app->environment('local', 'testing'));
-     }
++    private function configureUrls(): void
+@@ -96,1 +122,6 @@
+-}
 +
 +    private function configureVite(): void
 +    {
 +        Vite::prefetch(concurrency: 3);
 +    }
- }
-diff -ruN a/app/Providers/TypeScriptTransformerServiceProvider.php b/app/Providers/TypeScriptTransformerServiceProvider.php
---- a/app/Providers/TypeScriptTransformerServiceProvider.php	1969-12-31 18:00:00
-+++ b/app/Providers/TypeScriptTransformerServiceProvider.php	2026-07-17 23:35:13
++}
+diff --git a/app/Providers/TypeScriptTransformerServiceProvider.php b/app/Providers/TypeScriptTransformerServiceProvider.php
+new file mode 100644
+--- /dev/null
++++ b/app/Providers/TypeScriptTransformerServiceProvider.php
 @@ -0,0 +1,25 @@
 +<?php
 +
@@ -430,24 +505,18 @@ diff -ruN a/app/Providers/TypeScriptTransformerServiceProvider.php b/app/Provide
 +            ->writer(new FlatModuleWriter('generated/enums.ts'));
 +    }
 +}
-diff -ruN a/app/functions.php b/app/functions.php
---- a/app/functions.php	2026-07-18 06:29:28
-+++ b/app/functions.php	2026-07-17 23:35:13
-@@ -4,6 +4,10 @@
- 
- namespace App;
- 
+diff --git a/app/functions.php b/app/functions.php
+--- a/app/functions.php
++++ b/app/functions.php
+@@ -7,1 +7,5 @@
+-/**
 +use App\Enums\FlashKey;
 +use App\Enums\ToastVariant;
 +use Inertia\Inertia;
 +
- /**
-  * Wraps Laravel's translation helper so the return type stays narrowed to string.
-  *
-@@ -16,4 +20,18 @@
-     assert(is_string($message));
- 
-     return $message;
++/**
+@@ -19,1 +23,15 @@
+-}
 +}
 +
 +function toast(
@@ -462,86 +531,92 @@ diff -ruN a/app/functions.php b/app/functions.php
 +        'title' => $title,
 +        'variant' => $variant->value,
 +    ], fn (null|int|string $value): bool => $value !== null));
- }
-diff -ruN a/boost.json b/boost.json
---- a/boost.json	2026-07-18 00:00:00
-+++ b/boost.json	2026-07-18 00:00:00
-@@ -9 +9,2 @@
-     "packages": [
++}
+diff --git a/boost.json b/boost.json
+--- a/boost.json
++++ b/boost.json
+@@ -10,1 +10,2 @@
+-        "fruitcake/laravel-debugbar"
 +        "inertiaui/modal",
-@@ -14,2 +15,6 @@
-         "laravel-best-practices",
++        "fruitcake/laravel-debugbar"
+@@ -14,1 +15,5 @@
+-        "infer-conventions",
 +        "wayfinder-development",
-         "pest-testing",
 +        "inertia-react-development",
 +        "tailwindcss-development",
 +        "inertia-modal-development",
-diff -ruN a/bootstrap/app.php b/bootstrap/app.php
---- a/bootstrap/app.php	2026-07-18 06:29:28
-+++ b/bootstrap/app.php	2026-07-18 06:25:21
-@@ -2,6 +2,7 @@
- 
- declare(strict_types=1);
- 
++        "infer-conventions",
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -5,1 +5,3 @@
+-use Illuminate\Foundation\Application;
 +use App\Http\Middleware\HandleInertiaRequests;
- use Illuminate\Foundation\Application;
- use Illuminate\Foundation\Configuration\Exceptions;
- use Illuminate\Foundation\Configuration\Middleware;
-@@ -16,6 +17,9 @@
-         $middleware
-             ->redirectUsersTo('/')
++use App\Http\Middleware\SetLocale;
++use Illuminate\Foundation\Application;
+@@ -18 +20,5 @@
 -            ->throttleApi();
 +            ->throttleApi()
 +            ->web(append: [
++                SetLocale::class,
 +                HandleInertiaRequests::class,
 +            ]);
-     })
-     ->withExceptions(function (Exceptions $exceptions): void {
-         Integration::handles($exceptions);
-diff -ruN a/bootstrap/providers.php b/bootstrap/providers.php
---- a/bootstrap/providers.php	2026-07-18 00:00:00
-+++ b/bootstrap/providers.php	2026-07-18 00:00:00
-@@ -5 +5,2 @@
- use App\Providers\AppServiceProvider;
+diff --git a/bootstrap/providers.php b/bootstrap/providers.php
+--- a/bootstrap/providers.php
++++ b/bootstrap/providers.php
+@@ -6,1 +6,2 @@
+-use App\Providers\SqidsServiceProvider;
++use App\Providers\SqidsServiceProvider;
 +use App\Providers\TypeScriptTransformerServiceProvider;
-@@ -8 +9,2 @@
-     AppServiceProvider::class,
+@@ -11,1 +12,2 @@
+-];
 +    TypeScriptTransformerServiceProvider::class,
-diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
---- a/composer-dependency-analyser.php	2026-08-15 00:00:00
-+++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
-@@ -12 +12,3 @@
++];
+diff --git a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php
++++ b/composer-dependency-analyser.php
+@@ -12,1 +12,2 @@
+-        'laravel/tinker',
 +        'inertiaui/modal',
-         'laravel/tinker',
++        'laravel/tinker',
+@@ -13,1 +14,2 @@
+-        'propaganistas/laravel-phone',
 +        'laravel/wayfinder',
-diff -ruN a/composer.json b/composer.json
---- a/composer.json	2026-07-18 00:00:00
-+++ b/composer.json	2026-07-18 00:00:00
-@@ -19 +19,3 @@
-     "hosmelq/name-of-person": "^0.3.0",
-+    "inertiajs/inertia-laravel": "^3.3.1",
++        'propaganistas/laravel-phone',
+diff --git a/composer.json b/composer.json
+--- a/composer.json
++++ b/composer.json
+@@ -20,1 +20,3 @@
+-    "laravel/framework": "^13.33.0",
++    "inertiajs/inertia-laravel": "^3.4.0",
 +    "inertiaui/modal": "^3.1.2",
-@@ -21 +23,2 @@
-     "laravel/tinker": "^3.0.2",
++    "laravel/framework": "^13.33.0",
+@@ -22,1 +24,2 @@
+-    "propaganistas/laravel-phone": "^6.0.3",
 +    "laravel/wayfinder": "^0.1.21",
-@@ -24 +27,2 @@
++    "propaganistas/laravel-phone": "^6.0.3",
+@@ -24,1 +27,2 @@
+-    "sqids/sqids": "^0.5",
 +    "spatie/laravel-typescript-transformer": "^3.3.0",
-     "thecodingmachine/safe": "^3.4",
-@@ -40,0 +45 @@
++    "sqids/sqids": "^0.5",
+@@ -42,1 +46,2 @@
+-    "pestphp/pest-plugin-laravel": "^5.0.1",
 +    "pestphp/pest-plugin-browser": "^5.0",
-@@ -106 +111,3 @@
++    "pestphp/pest-plugin-laravel": "^5.0.1",
+@@ -107 +112,3 @@
 -    "test": "@php artisan test"
 +    "test": "@php artisan test",
 +    "typescript": "@php artisan typescript:transform --no-interaction",
 +    "wayfinder": "@php artisan wayfinder:generate --skip-routes"
-@@ -112 +119,3 @@
+@@ -113 +120,3 @@
 -    "test": "Runs the application tests."
 +    "test": "Runs the application tests.",
 +    "typescript": "Generates TypeScript definitions from PHP types.",
 +    "wayfinder": "Generates TypeScript definitions for routes and controller methods."
-diff -ruN a/config/inertia.php b/config/inertia.php
---- a/config/inertia.php	1969-12-31 18:00:00
-+++ b/config/inertia.php	2026-07-17 23:35:13
+diff --git a/config/inertia.php b/config/inertia.php
+new file mode 100644
+--- /dev/null
++++ b/config/inertia.php
 @@ -0,0 +1,144 @@
 +<?php
 +
@@ -687,13 +762,11 @@ diff -ruN a/config/inertia.php b/config/inertia.php
 +    ],
 +
 +];
-diff -ruN a/lefthook.yml b/lefthook.yml
---- a/lefthook.yml	2026-07-18 06:31:34
-+++ b/lefthook.yml	2026-07-17 23:35:13
-@@ -4,6 +4,20 @@
-   parallel: true
- 
-   jobs:
+diff --git a/lefthook.yml b/lefthook.yml
+--- a/lefthook.yml
++++ b/lefthook.yml
+@@ -7,1 +7,15 @@
+-    - name: Backend
 +    - name: Frontend
 +      group:
 +        piped: true
@@ -708,32 +781,45 @@ diff -ruN a/lefthook.yml b/lefthook.yml
 +            run: nub run fix {staged_files}
 +            stage_fixed: true
 +
-     - name: Backend
-       group:
-         piped: true
-@@ -33,5 +47,8 @@
-   parallel: true
- 
-   jobs:
++    - name: Backend
+@@ -36,1 +50,4 @@
+-    - name: PHPStan
 +    - name: tsgo
 +      run: nub exec tsgo -b
 +
-     - name: PHPStan
-       run: composer phpstan
-diff -ruN -U0 a/mise.toml b/mise.toml
---- a/mise.toml	2026-08-21 00:00:00
-+++ b/mise.toml	2026-08-21 00:00:00
-@@ -43 +43 @@
--description = "Installs dependencies, prepares environment files and keys, and runs migrations."
-+description = "Installs dependencies, prepares environment files and keys, runs migrations, and builds frontend assets."
-@@ -48 +48,3 @@
-   "php artisan migrate --force",
-+  "nub install --frozen-lockfile",
-+  "nub run build",
-diff -ruN a/package.json b/package.json
---- a/package.json	1969-12-31 18:00:00
-+++ b/package.json	2026-07-17 23:35:13
-@@ -0,0 +1,68 @@
++    - name: PHPStan
+diff --git a/mise.toml b/mise.toml
+--- a/mise.toml
++++ b/mise.toml
+@@ -84,1 +84,2 @@
+-  "php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
++  "nub ci",
++  "php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+@@ -93 +94 @@
+-run = "php artisan package:discover --ansi"
++run = "nub run build"
+diff --git a/nub.jsonc b/nub.jsonc
+new file mode 100644
+--- /dev/null
++++ b/nub.jsonc
+@@ -0,0 +1,12 @@
++{
++  "$schema": "https://nubjs.com/schema/v0.7.json",
++  "install": {
++    "publicHoist": [
++      "@heroui/*",
++      "@inertiajs/*",
++      "@internationalized/date",
++      "@react-types/*",
++      "react-aria-components",
++    ],
++  },
++}
+diff --git a/package.json b/package.json
+new file mode 100644
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,67 @@
 +{
 +  "$schema": "https://www.schemastore.org/package.json",
 +  "name": "template",
@@ -741,7 +827,7 @@ diff -ruN a/package.json b/package.json
 +  "private": true,
 +  "type": "module",
 +  "scripts": {
-+    "build": "tsgo -b && vite build",
++    "build": "tsc -b && vite build",
 +    "dev": "vite",
 +    "fix": "oxlint --fix --fix-dangerously --fix-suggestions --tsconfig tsconfig.json",
 +    "fmt": "oxfmt",
@@ -751,40 +837,40 @@ diff -ruN a/package.json b/package.json
 +    "preview": "vite preview"
 +  },
 +  "dependencies": {
-+    "@heroui/react": "^3.2.4",
-+    "@heroui/styles": "^3.2.4",
-+    "@inertiajs/react": "^3.6.1",
++    "@heroui/react": "^3.2.6",
++    "@heroui/styles": "^3.2.6",
++    "@inertiajs/react": "^3.7.1",
 +    "@inertiaui/modal-react": "^3.1.2",
-+    "@sentry/react": "^10.69.0",
-+    "react": "^19.2.8",
-+    "react-dom": "^19.2.8"
++    "@sentry/react": "^11.0.0",
++    "react": "^19.3.0",
++    "react-aria-components": "^1.21.1",
++    "react-dom": "^19.3.0"
 +  },
 +  "devDependencies": {
-+    "@babel/core": "^8.0.1",
-+    "@inertiajs/vite": "^3.6.1",
-+    "@laravel/vite-plugin-wayfinder": "^0.1.7",
-+    "@react-aria/optimize-locales-plugin": "^2.0.1",
-+    "@rolldown/plugin-babel": "^0.2.3",
++    "@babel/core": "^8.0.6",
++    "@inertiajs/vite": "^3.7.1",
++    "@laravel/vite-plugin-wayfinder": "^0.1.10",
++    "@react-aria/optimize-locales-plugin": "^2.0.2",
++    "@rolldown/plugin-babel": "^0.2.4",
 +    "@sentry/vite-plugin": "^5.4.0",
 +    "@tailwindcss/vite": "^4.3.3",
-+    "@types/node": "^26.2.0",
-+    "@types/react": "^19.2.18",
-+    "@types/react-dom": "^19.2.4",
-+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
-+    "@vitejs/plugin-react": "^6.0.5",
++    "@types/node": "^26.6.3",
++    "@types/react": "^19.3.0",
++    "@types/react-dom": "^19.3.0",
++    "@vitejs/plugin-react": "^6.1.1",
 +    "babel-plugin-react-compiler": "^1.0.0",
 +    "chokidar": "^5.0.0",
-+    "laravel-vite-plugin": "^3.1.3",
-+    "lefthook": "^2.1.10",
++    "laravel-vite-plugin": "^3.2.0",
++    "lefthook": "^2.1.14",
 +    "lightningcss": "^1.33.0",
-+    "oxfmt": "^0.62.0",
-+    "oxlint": "^1.77.0",
-+    "oxlint-tsgolint": "^7.0.2001",
-+    "playwright": "^1.62.1",
++    "oxfmt": "^0.70.0",
++    "oxlint": "^1.85.0",
++    "oxlint-tsgolint": "^7.0.2003",
++    "playwright": "^1.63.0",
 +    "tailwindcss": "^4.3.3",
 +    "tailwindcss-react-aria-components": "^2.2.0",
-+    "typescript": "~7.0.2",
-+    "vite": "^8.2.1",
++    "typescript": "^7.0.2",
++    "vite": "^8.3.1",
 +    "vite-plugin-manifest-sri": "^0.2.0",
 +    "vite-plugin-run": "^0.9.1",
 +    "vite-tsconfig-paths": "^6.1.1"
@@ -792,53 +878,37 @@ diff -ruN a/package.json b/package.json
 +  "devEngines": {
 +    "packageManager": {
 +      "name": "nub",
-+      "version": "^0.7.5",
++      "version": "0.9.5",
 +      "onFail": "warn"
 +    }
 +  },
-+  "packageManager": "nub@0.7.5",
-+  "allowBuilds": {
++  "allowScripts": {
 +    "@sentry/cli": true,
 +    "lefthook": true
 +  }
 +}
-diff -ruN a/phpunit.xml b/phpunit.xml
---- a/phpunit.xml	2026-07-18 06:29:29
-+++ b/phpunit.xml	2026-07-17 23:35:13
-@@ -10,6 +10,9 @@
-         <testsuite name="Architecture">
-             <file>tests/ArchitectureTest.php</file>
-         </testsuite>
+diff --git a/phpunit.xml b/phpunit.xml
+--- a/phpunit.xml
++++ b/phpunit.xml
+@@ -13,1 +13,4 @@
+-        <testsuite name="Feature">
 +        <testsuite name="Browser">
 +            <directory>tests/Browser</directory>
 +        </testsuite>
-         <testsuite name="Feature">
-             <directory>tests/Feature</directory>
-         </testsuite>
-diff -ruN a/resources/js/app.tsx b/resources/js/app.tsx
---- a/resources/js/app.tsx	1969-12-31 18:00:00
-+++ b/resources/js/app.tsx	2026-07-17 23:35:13
-@@ -0,0 +1,62 @@
++        <testsuite name="Feature">
+diff --git a/resources/js/app.tsx b/resources/js/app.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/app.tsx
+@@ -0,0 +1,52 @@
 +import './index.css'
++import './telemetry'
 +import {RouterProvider, toast as heroToast, Toast} from '@heroui/react'
 +import {createInertiaApp, router, type ResolvedComponent} from '@inertiajs/react'
 +import {ModalStackProvider} from '@inertiaui/modal-react'
-+import * as Sentry from '@sentry/react'
++import {I18nProvider} from 'react-aria-components'
 +
 +import {Modal as ModalLayout} from './layouts/Modal'
-+
-+Sentry.init({
-+  dsn: import.meta.env.VITE_SENTRY_DSN,
-+  integrations: [
-+    Sentry.browserProfilingIntegration(),
-+    Sentry.browserTracingIntegration(),
-+    Sentry.captureConsoleIntegration(),
-+    Sentry.replayIntegration(),
-+  ],
-+  replaysOnErrorSampleRate: 1.0,
-+  replaysSessionSampleRate: 0.25,
-+  tracesSampleRate: 0.25,
-+})
 +
 +router.on('flash', (event) => {
 +  const {toast} = event.detail.flash
@@ -874,16 +944,19 @@ diff -ruN a/resources/js/app.tsx b/resources/js/app.tsx
 +    return page()
 +  },
 +  strictMode: true,
-+  withApp: (app) => (
-+    <RouterProvider navigate={(path, routerOptions) => router.visit(path, routerOptions)}>
-+      <ModalStackProvider>{app}</ModalStackProvider>
-+      <Toast.Provider />
-+    </RouterProvider>
++  withApp: (app, {page}) => (
++    <I18nProvider locale={page.props.locale}>
++      <RouterProvider navigate={(path, routerOptions) => router.visit(path, routerOptions)}>
++        <ModalStackProvider>{app}</ModalStackProvider>
++        <Toast.Provider />
++      </RouterProvider>
++    </I18nProvider>
 +  ),
 +})
-diff -ruN a/resources/js/index.css b/resources/js/index.css
---- a/resources/js/index.css	1969-12-31 18:00:00
-+++ b/resources/js/index.css	2026-07-17 23:35:13
+diff --git a/resources/js/index.css b/resources/js/index.css
+new file mode 100644
+--- /dev/null
++++ b/resources/js/index.css
 @@ -0,0 +1,6 @@
 +@import 'tailwindcss';
 +@import '@heroui/styles';
@@ -891,9 +964,10 @@ diff -ruN a/resources/js/index.css b/resources/js/index.css
 +@plugin 'tailwindcss-react-aria-components';
 +
 +@source '../views';
-diff -ruN a/resources/js/layouts/Modal.tsx b/resources/js/layouts/Modal.tsx
---- a/resources/js/layouts/Modal.tsx	1969-12-31 18:00:00
-+++ b/resources/js/layouts/Modal.tsx	2026-07-17 23:35:13
+diff --git a/resources/js/layouts/Modal.tsx b/resources/js/layouts/Modal.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/layouts/Modal.tsx
 @@ -0,0 +1,15 @@
 +import {ModalRoot} from '@inertiaui/modal-react'
 +import type {ReactNode} from 'react'
@@ -910,9 +984,10 @@ diff -ruN a/resources/js/layouts/Modal.tsx b/resources/js/layouts/Modal.tsx
 +    </>
 +  )
 +}
-diff -ruN a/resources/js/pages/Home.tsx b/resources/js/pages/Home.tsx
---- a/resources/js/pages/Home.tsx	1969-12-31 18:00:00
-+++ b/resources/js/pages/Home.tsx	2026-07-17 23:35:13
+diff --git a/resources/js/pages/Home.tsx b/resources/js/pages/Home.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/Home.tsx
 @@ -0,0 +1,11 @@
 +interface HomeProps {
 +  now: string
@@ -925,10 +1000,32 @@ diff -ruN a/resources/js/pages/Home.tsx b/resources/js/pages/Home.tsx
 +    </div>
 +  )
 +}
-diff -ruN a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
---- a/resources/js/types/global.d.ts	1969-12-31 18:00:00
-+++ b/resources/js/types/global.d.ts	2026-07-17 23:35:13
-@@ -0,0 +1,28 @@
+diff --git a/resources/js/telemetry.ts b/resources/js/telemetry.ts
+new file mode 100644
+--- /dev/null
++++ b/resources/js/telemetry.ts
+@@ -0,0 +1,16 @@
++import * as Sentry from '@sentry/react'
++
++if (import.meta.env.PROD && !import.meta.env.SSR) {
++  Sentry.init({
++    dsn: import.meta.env.VITE_SENTRY_DSN,
++    integrations: [
++      Sentry.browserProfilingIntegration(),
++      Sentry.browserTracingIntegration(),
++      Sentry.captureConsoleIntegration(),
++      Sentry.replayIntegration(),
++    ],
++    replaysOnErrorSampleRate: 1.0,
++    replaysSessionSampleRate: 0.25,
++    tracesSampleRate: 0.25,
++  })
++}
+diff --git a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
+new file mode 100644
+--- /dev/null
++++ b/resources/js/types/global.d.ts
+@@ -0,0 +1,29 @@
 +import type {VisitOptions} from '@inertiajs/core'
 +
 +import type {ToastVariant} from '#/types/generated/enums'
@@ -948,6 +1045,7 @@ diff -ruN a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
 +      auth: {
 +        user: null | UserResource
 +      }
++      locale: string
 +    }
 +  }
 +}
@@ -957,9 +1055,10 @@ diff -ruN a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
 +    routerOptions: VisitOptions
 +  }
 +}
-diff -ruN a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
---- a/resources/js/types/laravel.ts	1969-12-31 18:00:00
-+++ b/resources/js/types/laravel.ts	2026-07-17 23:35:13
+diff --git a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
+new file mode 100644
+--- /dev/null
++++ b/resources/js/types/laravel.ts
 @@ -0,0 +1,42 @@
 +/* Types */
 +
@@ -991,7 +1090,7 @@ diff -ruN a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
 +
 +interface Resource {
 +  created_at: string
-+  id: number
++  id: string
 +  updated_at: string
 +}
 +
@@ -1003,14 +1102,16 @@ diff -ruN a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
 +  last_name: string
 +  name: string
 +}
-diff -ruN a/resources/js/vite-env.d.ts b/resources/js/vite-env.d.ts
---- a/resources/js/vite-env.d.ts	1969-12-31 18:00:00
-+++ b/resources/js/vite-env.d.ts	2026-07-17 23:35:13
+diff --git a/resources/js/vite-env.d.ts b/resources/js/vite-env.d.ts
+new file mode 100644
+--- /dev/null
++++ b/resources/js/vite-env.d.ts
 @@ -0,0 +1 @@
 +/// <reference types="vite/client" />
-diff -ruN a/resources/views/app.blade.php b/resources/views/app.blade.php
---- a/resources/views/app.blade.php	1969-12-31 18:00:00
-+++ b/resources/views/app.blade.php	2026-07-17 23:35:13
+diff --git a/resources/views/app.blade.php b/resources/views/app.blade.php
+new file mode 100644
+--- /dev/null
++++ b/resources/views/app.blade.php
 @@ -0,0 +1,24 @@
 +<!DOCTYPE html>
 +<html lang="{{ str_replace('_', '-', Config::string('app.locale')) }}">
@@ -1036,11 +1137,12 @@ diff -ruN a/resources/views/app.blade.php b/resources/views/app.blade.php
 +        <x-inertia::app />
 +    </body>
 +</html>
-diff -ruN a/routes/web.php b/routes/web.php
---- a/routes/web.php	2026-07-18 06:29:29
-+++ b/routes/web.php	2026-07-18 06:25:21
-@@ -5 +5,3 @@
- use Illuminate\Support\Facades\Route;
+diff --git a/routes/web.php b/routes/web.php
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -5,1 +5,3 @@
+-use Illuminate\Support\Facades\Route;
++use Illuminate\Support\Facades\Route;
 +use Inertia\Inertia;
 +use Inertia\Response;
 @@ -7,3 +9,13 @@
@@ -1060,13 +1162,12 @@ diff -ruN a/routes/web.php b/routes/web.php
 +    Route::middleware('verified')->scopeBindings()->group(function (): void {
 +    });
 +});
-diff -ruN a/solo.yml b/solo.yml
---- a/solo.yml	2026-07-18 06:31:35
-+++ b/solo.yml	2026-07-17 23:35:13
-@@ -15,3 +15,11 @@
-     auto_restart: true
-     auto_start: true
-     command: php artisan schedule:work --whisper
+diff --git a/solo.yml b/solo.yml
+--- a/solo.yml
++++ b/solo.yml
+@@ -17,1 +17,9 @@
+-    command: php artisan schedule:work --whisper
++    command: php artisan schedule:work --whisper
 +  'nub: build':
 +    auto_restart: false
 +    auto_start: false
@@ -1075,9 +1176,16 @@ diff -ruN a/solo.yml b/solo.yml
 +    auto_restart: true
 +    auto_start: true
 +    command: nub run dev
-diff -ruN a/tests/Feature/HandleInertiaRequestsTest.php b/tests/Feature/HandleInertiaRequestsTest.php
---- a/tests/Feature/HandleInertiaRequestsTest.php	1969-12-31 18:00:00
-+++ b/tests/Feature/HandleInertiaRequestsTest.php	2026-07-17 23:35:13
+diff --git a/tests/Browser/.gitkeep b/tests/Browser/.gitkeep
+new file mode 100644
+--- /dev/null
++++ b/tests/Browser/.gitkeep
+@@ -0,0 +1 @@
++# Browser tests live in this directory.
+diff --git a/tests/Feature/HandleInertiaRequestsTest.php b/tests/Feature/HandleInertiaRequestsTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/HandleInertiaRequestsTest.php
 @@ -0,0 +1,29 @@
 +<?php
 +
@@ -1108,9 +1216,53 @@ diff -ruN a/tests/Feature/HandleInertiaRequestsTest.php b/tests/Feature/HandleIn
 +        ->toBeInstanceOf(UserResource::class)
 +        ->resource->toBe($user);
 +});
-diff -ruN a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integration/Http/Resources/UserResourceTest.php
---- a/tests/Integration/Http/Resources/UserResourceTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Http/Resources/UserResourceTest.php	2026-07-17 23:35:13
+diff --git a/tests/Feature/Http/Middleware/SetLocaleTest.php b/tests/Feature/Http/Middleware/SetLocaleTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/Middleware/SetLocaleTest.php
+@@ -0,0 +1,38 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\get;
++use function Pest\Laravel\withCookie;
++use function Pest\Laravel\withHeaders;
++
++use Illuminate\Support\Facades\App;
++use Illuminate\Support\Facades\Route;
++
++beforeEach(function (): void {
++    Route::middleware('web')->get('/_test', fn (): string => App::currentLocale());
++});
++
++it('negotiates the supported browser language', function (string $header, string $expected): void {
++    withHeaders(['Accept-Language' => $header]);
++
++    get('/_test')->assertOk()->assertContent($expected)->assertCookie('locale', $expected);
++})->with([
++    'English' => ['en-US,en;q=0.9', 'en'],
++    'Spanish' => ['es-NI,es;q=0.9,en;q=0.5', 'es'],
++    'unsupported' => ['fr-FR,fr;q=0.9', 'en'],
++]);
++
++it('prefers a supported locale cookie over the browser language', function (): void {
++    withCookie('locale', 'es');
++    withHeaders(['Accept-Language' => 'en-US']);
++
++    get('/_test')->assertOk()->assertContent('es');
++});
++
++it('replaces an unsupported locale cookie', function (): void {
++    withCookie('locale', 'fr');
++    withHeaders(['Accept-Language' => 'es-419']);
++
++    get('/_test')->assertOk()->assertContent('es')->assertCookie('locale', 'es');
++});
+diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integration/Http/Resources/UserResourceTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Http/Resources/UserResourceTest.php
 @@ -0,0 +1,28 @@
 +<?php
 +
@@ -1133,45 +1285,38 @@ diff -ruN a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integr
 +        'created_at' => $user->created_at->toJSON(),
 +        'email' => $user->email,
 +        'first_name' => $user->first_name,
-+        'id' => $user->id,
++        'id' => $user->sqid,
 +        'is_email_verified' => true,
 +        'last_name' => $user->last_name,
 +        'name' => $user->name,
 +        'updated_at' => $user->updated_at->toJSON(),
 +    ])->toMatchArray($resource);
 +});
-diff -ruN a/tests/Browser/.gitkeep b/tests/Browser/.gitkeep
---- a/tests/Browser/.gitkeep	1969-12-31 18:00:00
-+++ b/tests/Browser/.gitkeep	2026-07-17 23:35:13
-@@ -0,0 +1 @@
-+# Browser tests live in this directory.
-diff -ruN a/tests/Pest.php b/tests/Pest.php
---- a/tests/Pest.php	2026-07-18 06:29:29
-+++ b/tests/Pest.php	2026-07-17 23:35:13
-@@ -5,14 +5,18 @@
- use function Pest\Laravel\actingAs;
- use function Pest\Laravel\freezeSecond;
+diff --git a/tests/Pest.php b/tests/Pest.php
+--- a/tests/Pest.php
++++ b/tests/Pest.php
+@@ -6,1 +6,2 @@
+-use function Pest\Laravel\freezeSecond;
++use function Pest\Laravel\freezeSecond;
 +use function Pest\Laravel\withoutVite;
- 
+@@ -8,1 +9,2 @@
+-use App\Models\User;
 +use App\Enums\ToastVariant;
- use App\Models\User;
- use Illuminate\Contracts\Auth\Authenticatable;
++use App\Models\User;
+@@ -10,1 +12,2 @@
+-use Tests\TestCase;
 +use Illuminate\Testing\TestResponse;
- use Tests\TestCase;
- 
- pest()
-     ->extend(TestCase::class)
-     ->beforeEach(function (): void {
-         freezeSecond();
++use Tests\TestCase;
+@@ -16,1 +19,2 @@
+-    })
 +        withoutVite();
-     })
++    })
+@@ -17 +21 @@
 -    ->in('Feature', 'Integration', 'Unit');
 +    ->in('Browser', 'Feature', 'Integration', 'Unit');
- 
-@@ -23,3 +27,17 @@
- 
-     return $user;
- }
+@@ -26,1 +30,15 @@
+-}
++}
 +
 +TestResponse::macro('assertToast', function (
 +    string $title,
@@ -1186,9 +1331,10 @@ diff -ruN a/tests/Pest.php b/tests/Pest.php
 +        'variant' => $variant->value,
 +    ], static fn (null|int|string $value): bool => $value !== null));
 +});
-diff -ruN a/tests/Unit/Enums/FlashKeyTest.php b/tests/Unit/Enums/FlashKeyTest.php
---- a/tests/Unit/Enums/FlashKeyTest.php	1969-12-31 18:00:00
-+++ b/tests/Unit/Enums/FlashKeyTest.php	2026-07-17 23:35:13
+diff --git a/tests/Unit/Enums/FlashKeyTest.php b/tests/Unit/Enums/FlashKeyTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Unit/Enums/FlashKeyTest.php
 @@ -0,0 +1,11 @@
 +<?php
 +
@@ -1201,9 +1347,26 @@ diff -ruN a/tests/Unit/Enums/FlashKeyTest.php b/tests/Unit/Enums/FlashKeyTest.ph
 +        'toast',
 +    ]);
 +});
-diff -ruN a/tests/Unit/Enums/ToastVariantTest.php b/tests/Unit/Enums/ToastVariantTest.php
---- a/tests/Unit/Enums/ToastVariantTest.php	1969-12-31 18:00:00
-+++ b/tests/Unit/Enums/ToastVariantTest.php	2026-07-17 23:35:13
+diff --git a/tests/Unit/Enums/LocaleTest.php b/tests/Unit/Enums/LocaleTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Unit/Enums/LocaleTest.php
+@@ -0,0 +1,11 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\Locale;
++
++it('maps supported locales to their language tags', function (): void {
++    expect(Locale::English->languageTag())->toBe('en-US')
++        ->and(Locale::Spanish->languageTag())->toBe('es-419')
++        ->and(Locale::values())->toBe(['en', 'es']);
++});
+diff --git a/tests/Unit/Enums/ToastVariantTest.php b/tests/Unit/Enums/ToastVariantTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Unit/Enums/ToastVariantTest.php
 @@ -0,0 +1,15 @@
 +<?php
 +
@@ -1220,9 +1383,10 @@ diff -ruN a/tests/Unit/Enums/ToastVariantTest.php b/tests/Unit/Enums/ToastVarian
 +        'warning',
 +    ]);
 +});
-diff -ruN a/tsconfig.app.json b/tsconfig.app.json
---- a/tsconfig.app.json	1969-12-31 18:00:00
-+++ b/tsconfig.app.json	2026-07-17 23:35:13
+diff --git a/tsconfig.app.json b/tsconfig.app.json
+new file mode 100644
+--- /dev/null
++++ b/tsconfig.app.json
 @@ -0,0 +1,38 @@
 +{
 +  "compilerOptions": {
@@ -1262,17 +1426,19 @@ diff -ruN a/tsconfig.app.json b/tsconfig.app.json
 +  "exclude": ["resources/js/actions/Fruitcake"],
 +  "include": ["resources/js"]
 +}
-diff -ruN a/tsconfig.json b/tsconfig.json
---- a/tsconfig.json	1969-12-31 18:00:00
-+++ b/tsconfig.json	2026-07-17 23:35:13
+diff --git a/tsconfig.json b/tsconfig.json
+new file mode 100644
+--- /dev/null
++++ b/tsconfig.json
 @@ -0,0 +1,4 @@
 +{
 +  "files": [],
 +  "references": [{"path": "./tsconfig.app.json"}, {"path": "./tsconfig.node.json"}]
 +}
-diff -ruN a/tsconfig.node.json b/tsconfig.node.json
---- a/tsconfig.node.json	1969-12-31 18:00:00
-+++ b/tsconfig.node.json	2026-07-17 23:35:13
+diff --git a/tsconfig.node.json b/tsconfig.node.json
+new file mode 100644
+--- /dev/null
++++ b/tsconfig.node.json
 @@ -0,0 +1,26 @@
 +{
 +  "compilerOptions": {
@@ -1300,9 +1466,10 @@ diff -ruN a/tsconfig.node.json b/tsconfig.node.json
 +  },
 +  "include": ["vite.config.ts"]
 +}
-diff -ruN a/vite.config.ts b/vite.config.ts
---- a/vite.config.ts	1969-12-31 18:00:00
-+++ b/vite.config.ts	2026-07-17 23:35:13
+diff --git a/vite.config.ts b/vite.config.ts
+new file mode 100644
+--- /dev/null
++++ b/vite.config.ts
 @@ -0,0 +1,71 @@
 +import inertia from '@inertiajs/vite'
 +import {wayfinder} from '@laravel/vite-plugin-wayfinder'

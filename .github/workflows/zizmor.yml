@@ -3,6 +3,7 @@ name: GitHub Actions security analysis
 on:
   # The workflow and configuration come from main; PR files are parsed as data only.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
+    types: [opened, ready_for_review, reopened, synchronize]
   push:
     branches: [main]
 
@@ -16,6 +17,8 @@ permissions:
 jobs:
   zizmor:
     name: Run zizmor
+
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.draft == false
 
     runs-on: ubuntu-latest
 
@@ -42,13 +45,12 @@ jobs:
         with:
           advanced-security: false
           annotations: true
-          collect: default
+          collect: all
           config: trusted/.github/zizmor.yml
-          inputs: pull-request
-          min-confidence: medium
+          inputs: pull-request/.github
           min-severity: medium
           persona: auditor
-          version: 1.29.0
+          version: 1.30.1
 
       - name: Run zizmor on main
         if: github.event_name == 'push'
@@ -56,10 +58,9 @@ jobs:
         with:
           advanced-security: false
           annotations: true
-          collect: default
+          collect: all
           config: trusted/.github/zizmor.yml
-          inputs: trusted
-          min-confidence: medium
+          inputs: trusted/.github
           min-severity: medium
           persona: auditor
-          version: 1.29.0
+          version: 1.30.1

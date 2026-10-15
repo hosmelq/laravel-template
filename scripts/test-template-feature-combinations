@@ -12,13 +12,19 @@ cleanup() {
 
     if [[ $exit_code -eq 0 ]]; then
         if command -v trash >/dev/null 2>&1; then
-            trash "$temporary_root"
+            if ! trash "$temporary_root"; then
+                printf '\nTemporary checkout preserved at %s\n' "$temporary_root" >&2
+            fi
         else
-            trash-put "$temporary_root"
+            if ! trash-put "$temporary_root"; then
+                printf '\nTemporary checkout preserved at %s\n' "$temporary_root" >&2
+            fi
         fi
     else
         printf '\nTemporary checkout preserved at %s\n' "$temporary_root" >&2
     fi
+
+    return "$exit_code"
 }
 
 contains() {
@@ -68,10 +74,6 @@ validate_dependency_analyser_ignores() {
 
         if (in_array("media", $selected, true)) {
             $expected[] = "league/flysystem-aws-s3-v3";
-        }
-
-        if (in_array("organizations", $selected, true)) {
-            $expected = array_values(array_diff($expected, ["thecodingmachine/safe"]));
         }
 
         $actual = $packageMatches[1];
@@ -161,6 +163,16 @@ for ((mask = 1; mask <= total; mask++)); do
 
     validate_dependency_analyser_ignores "$scenario/composer-dependency-analyser.php" "${selected[@]}"
 
+    if ! find "$scenario/app" "$scenario/bootstrap" "$scenario/config" "$scenario/database" "$scenario/routes" "$scenario/tests" \
+        -name '*.php' -print0 | xargs -0 php -l > "$scenario/php-lint.log" 2>&1; then
+        tail -20 "$scenario/php-lint.log" >&2
+
+        exit 1
+    fi
+
+    [[ -f "$scenario/.github/workflows/update-generated-files.yml" ]]
+    [[ ! -e "$scenario/.github/workflows/update-nub-lock.yml" ]]
+
     if [[ -f "$scenario/package.json" ]]; then
         php -r 'json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);' "$scenario/package.json"
     fi
@@ -169,32 +181,35 @@ for ((mask = 1; mask <= total; mask++)); do
         php -r '
             $composer = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
             $package = json_decode(file_get_contents($argv[2]), true, 512, JSON_THROW_ON_ERROR);
-            $renovate = json_decode(file_get_contents($argv[3]), true, 512, JSON_THROW_ON_ERROR);
 
             if (($composer["require-dev"]["pestphp/pest-plugin-browser"] ?? null) !== "^5.0") {
                 throw new RuntimeException("The generated Composer dependencies must install Pest Browser Testing.");
             }
 
-            if (($package["packageManager"] ?? null) !== "nub@0.7.5") {
-                throw new RuntimeException("The generated packageManager must pin Nub 0.7.5.");
+            if (! preg_match("/^nub = \"(?<version>[^\"]+)\"$/m", file_get_contents($argv[3]), $mise)) {
+                throw new RuntimeException("The generated Mise configuration must pin Nub.");
+            }
+
+            if (array_key_exists("packageManager", $package)) {
+                throw new RuntimeException("The Nub contract belongs in devEngines.packageManager.");
             }
 
             if (($package["devEngines"]["packageManager"] ?? null) !== [
                 "name" => "nub",
-                "version" => "^0.7.5",
+                "version" => $mise["version"],
                 "onFail" => "warn",
             ]) {
-                throw new RuntimeException("The generated devEngines requirement must target Nub 0.7.5.");
+                throw new RuntimeException("The generated devEngines requirement must match the exact Mise version.");
             }
 
-            if (($package["devDependencies"]["playwright"] ?? null) !== "^1.62.1") {
+            if (! isset($package["devDependencies"]["playwright"])) {
                 throw new RuntimeException("The generated frontend dependencies must install Playwright.");
             }
 
-            if (! in_array("nub.lock", $renovate["includePaths"] ?? [], true)) {
-                throw new RuntimeException("Renovate must include the Nub lockfile.");
+            if (! isset($package["allowScripts"]) || isset($package["allowBuilds"])) {
+                throw new RuntimeException("The generated package must use the current Nub script permission contract.");
             }
-        ' "$scenario/composer.json" "$scenario/package.json" "$scenario/.github/renovate.json"
+        ' "$scenario/composer.json" "$scenario/package.json" "$scenario/mise.toml"
 
         [[ -f "$scenario/nub.jsonc" ]]
         [[ -f "$scenario/tests/Browser/.gitkeep" ]]

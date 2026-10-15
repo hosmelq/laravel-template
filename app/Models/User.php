@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSqid;
 use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use HosmelQ\NameOfPerson\PersonName;
@@ -17,6 +18,7 @@ use Override;
 
 /**
  * @property-read int $id
+ * @property-read string $sqid
  * @property-read string $email
  * @property-read null|CarbonImmutable $email_verified_at
  * @property-read string $first_name
@@ -33,6 +35,7 @@ class User extends Authenticatable implements MustVerifyEmail
     /** @use HasFactory<UserFactory> */
     use HasFactory;
 
+    use HasSqid;
     use Notifiable;
 
     #[Override]

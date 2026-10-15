@@ -122,11 +122,12 @@ class FeatureInstaller
             '--ansi',
         ], 'Laravel could not discover the installed packages.');
 
-        if (is_file(base_path('package.json'))) {
+        if ($this->files->isFile(base_path('package.json'))) {
             $this->run(['nub', 'install'], 'The frontend dependencies could not be installed.', forever: true);
+            $this->run(['nub', 'run', 'build'], 'The frontend assets could not be built.', forever: true);
         }
 
-        $this->run(['mise', 'run', 'agent:setup'], 'The agent setup could not be completed.', forever: true);
+        $this->run(['mise', 'run', 'setup:agent'], 'The agent setup could not be completed.', forever: true);
     }
 
     private function isInstalled(TemplateFeature $feature): bool

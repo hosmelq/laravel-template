@@ -1,13 +1,48 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "dependencyDashboard": true,
-  "enabledManagers": ["composer", "github-actions"],
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
-  "includePaths": [
-    ".github/workflows/**",
-    "composer.json",
-    "composer.lock"
+  "customManagers": [
+    {
+      "customType": "regex",
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "jdx/mise",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "managerFilePatterns": ["mise.toml"],
+      "matchStrings": ["min_version = \"(?<currentValue>[^\"]+)\""]
+    },
+    {
+      "customType": "regex",
+      "datasourceTemplate": "node-version",
+      "depNameTemplate": "node",
+      "managerFilePatterns": [".github/workflows/*.yml"],
+      "matchStrings": ["NODE_VERSION: '(?<currentValue>[^']+)'"]
+    },
+    {
+      "customType": "regex",
+      "datasourceTemplate": "npm",
+      "depNameTemplate": "nub",
+      "managerFilePatterns": [".github/workflows/*.yml"],
+      "matchStrings": ["NUB_VERSION: '(?<currentValue>[^']+)'"],
+      "packageNameTemplate": "@nubjs/nub"
+    },
+    {
+      "customType": "regex",
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "zizmorcore/zizmor",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "managerFilePatterns": [".github/workflows/zizmor.yml"],
+      "matchStrings": ["version: (?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"]
+    }
   ],
+  "dependencyDashboard": true,
+  "enabledManagers": ["composer", "custom.regex", "github-actions", "mise"],
+  "extends": [
+    "config:recommended",
+    "group:all",
+    "helpers:pinGitHubActionDigests",
+    "schedule:weekly"
+  ],
+  "includePaths": [".github/workflows/**", "composer.json", "mise.toml"],
+  "minimumReleaseAge": "1 day",
   "packageRules": [
     {
       "matchDepNames": ["pullfrog/pullfrog"],
@@ -16,24 +51,16 @@
     },
     {
       "enabled": false,
-      "matchDepNames": ["php"],
-      "matchManagers": ["composer"]
+      "matchDepNames": ["ghcr.io/nubjs/nub", "ghcr.io/zizmorcore/zizmor", "php"]
     },
     {
-      "groupName": "composer dependencies",
       "matchManagers": ["composer"],
       "postUpdateOptions": ["composerWithAll"],
       "rangeStrategy": "bump"
-    },
-    {
-      "groupName": "github actions",
-      "matchManagers": ["github-actions"],
-      "schedule": ["* 3-6 * * 1,4"]
     }
   ],
   "rebaseWhen": "conflicted",
-  "schedule": ["* 3-6 * * 3"],
   "semanticCommits": "enabled",
-  "separateMajorMinor": false,
-  "timezone": "America/Managua"
+  "timezone": "America/Managua",
+  "updateNotScheduled": false
 }

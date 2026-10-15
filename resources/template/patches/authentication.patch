@@ -1,7 +1,8 @@
-diff -ruN a/app/Actions/Fortify/CreateNewUser.php b/app/Actions/Fortify/CreateNewUser.php
---- a/app/Actions/Fortify/CreateNewUser.php	1969-12-31 18:00:00
-+++ b/app/Actions/Fortify/CreateNewUser.php	2026-07-17 23:35:13
-@@ -0,0 +1,43 @@
+diff --git a/app/Actions/Fortify/CreateNewUser.php b/app/Actions/Fortify/CreateNewUser.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Fortify/CreateNewUser.php
+@@ -0,0 +1,44 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -19,12 +20,13 @@ diff -ruN a/app/Actions/Fortify/CreateNewUser.php b/app/Actions/Fortify/CreateNe
 +    use PasswordValidationRules;
 +
 +    /**
-+     * @param array<string, string> $input
++     * @param array<array-key, mixed> $input
 +     */
 +    public function create(array $input): User
 +    {
-+        Validator::make($input, [
++        $validated = Validator::make($input, [
 +            'email' => [
++                'bail',
 +                'required',
 +                'string',
 +                'max:255',
@@ -35,42 +37,43 @@ diff -ruN a/app/Actions/Fortify/CreateNewUser.php b/app/Actions/Fortify/CreateNe
 +            'first_name' => ['required', 'string', 'max:255'],
 +            'last_name' => ['required', 'string', 'max:255'],
 +            'password' => $this->passwordRules(),
-+        ])->validate();
++        ])->safe();
 +
 +        return User::query()->create([
-+            'email' => $input['email'],
-+            'first_name' => $input['first_name'],
-+            'last_name' => $input['last_name'],
-+            'password' => Hash::make($input['password']),
++            'email' => $validated->string('email')->toString(),
++            'first_name' => $validated->string('first_name')->toString(),
++            'last_name' => $validated->string('last_name')->toString(),
++            'password' => Hash::make($validated->string('password')->toString()),
 +        ]);
 +    }
 +}
-diff -ruN a/app/Actions/Fortify/PasswordValidationRules.php b/app/Actions/Fortify/PasswordValidationRules.php
---- a/app/Actions/Fortify/PasswordValidationRules.php	1969-12-31 18:00:00
-+++ b/app/Actions/Fortify/PasswordValidationRules.php	2026-07-17 23:35:13
-@@ -0,0 +1,19 @@
+diff --git a/app/Actions/Fortify/PasswordValidationRules.php b/app/Actions/Fortify/PasswordValidationRules.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Fortify/PasswordValidationRules.php
+@@ -0,0 +1,18 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Actions\Fortify;
 +
-+use Illuminate\Contracts\Validation\Rule;
 +use Illuminate\Validation\Rules\Password;
 +
 +trait PasswordValidationRules
 +{
 +    /**
-+     * @return array<int, array<mixed>|Rule|string>
++     * @return list<Password|string>
 +     */
 +    protected function passwordRules(): array
 +    {
 +        return ['required', 'string', Password::default(), 'confirmed'];
 +    }
 +}
-diff -ruN a/app/Actions/Fortify/ResetUserPassword.php b/app/Actions/Fortify/ResetUserPassword.php
---- a/app/Actions/Fortify/ResetUserPassword.php	1969-12-31 18:00:00
-+++ b/app/Actions/Fortify/ResetUserPassword.php	2026-07-17 23:35:13
+diff --git a/app/Actions/Fortify/ResetUserPassword.php b/app/Actions/Fortify/ResetUserPassword.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Fortify/ResetUserPassword.php
 @@ -0,0 +1,29 @@
 +<?php
 +
@@ -96,14 +99,15 @@ diff -ruN a/app/Actions/Fortify/ResetUserPassword.php b/app/Actions/Fortify/Rese
 +            'password' => $this->passwordRules(),
 +        ])->validate();
 +
-+        $user->forceFill([
++        $user->update([
 +            'password' => Hash::make($input['password']),
-+        ])->save();
++        ]);
 +    }
 +}
-diff -ruN a/app/Actions/Fortify/UpdateUserPassword.php b/app/Actions/Fortify/UpdateUserPassword.php
---- a/app/Actions/Fortify/UpdateUserPassword.php	1969-12-31 18:00:00
-+++ b/app/Actions/Fortify/UpdateUserPassword.php	2026-07-17 23:35:13
+diff --git a/app/Actions/Fortify/UpdateUserPassword.php b/app/Actions/Fortify/UpdateUserPassword.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Fortify/UpdateUserPassword.php
 @@ -0,0 +1,30 @@
 +<?php
 +
@@ -130,14 +134,15 @@ diff -ruN a/app/Actions/Fortify/UpdateUserPassword.php b/app/Actions/Fortify/Upd
 +            'password' => $this->passwordRules(),
 +        ])->validateWithBag('updatePassword');
 +
-+        $user->forceFill([
++        $user->update([
 +            'password' => Hash::make($input['password']),
-+        ])->save();
++        ]);
 +    }
 +}
-diff -ruN a/app/Actions/Fortify/UpdateUserProfileInformation.php b/app/Actions/Fortify/UpdateUserProfileInformation.php
---- a/app/Actions/Fortify/UpdateUserProfileInformation.php	1969-12-31 18:00:00
-+++ b/app/Actions/Fortify/UpdateUserProfileInformation.php	2026-07-17 23:35:13
+diff --git a/app/Actions/Fortify/UpdateUserProfileInformation.php b/app/Actions/Fortify/UpdateUserProfileInformation.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Fortify/UpdateUserProfileInformation.php
 @@ -0,0 +1,56 @@
 +<?php
 +
@@ -172,11 +177,11 @@ diff -ruN a/app/Actions/Fortify/UpdateUserProfileInformation.php b/app/Actions/F
 +        if ($input['email'] !== $user->email) {
 +            $this->updateVerifiedUser($user, $input);
 +        } else {
-+            $user->forceFill([
++            $user->update([
 +                'email' => $input['email'],
 +                'first_name' => $input['first_name'],
 +                'last_name' => $input['last_name'],
-+            ])->save();
++            ]);
 +        }
 +    }
 +
@@ -185,19 +190,20 @@ diff -ruN a/app/Actions/Fortify/UpdateUserProfileInformation.php b/app/Actions/F
 +     */
 +    protected function updateVerifiedUser(User $user, array $input): void
 +    {
-+        $user->forceFill([
++        $user->update([
 +            'email' => $input['email'],
 +            'email_verified_at' => null,
 +            'first_name' => $input['first_name'],
 +            'last_name' => $input['last_name'],
-+        ])->save();
++        ]);
 +
 +        $user->sendEmailVerificationNotification();
 +    }
 +}
-diff -ruN a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifyServiceProvider.php
---- a/app/Providers/FortifyServiceProvider.php	1969-12-31 18:00:00
-+++ b/app/Providers/FortifyServiceProvider.php	2026-07-18 06:25:21
+diff --git a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifyServiceProvider.php
+new file mode 100644
+--- /dev/null
++++ b/app/Providers/FortifyServiceProvider.php
 @@ -0,0 +1,43 @@
 +<?php
 +
@@ -242,46 +248,53 @@ diff -ruN a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifyServ
 +        });
 +    }
 +}
-diff -ruN a/boost.json b/boost.json
---- a/boost.json	2026-07-18 00:00:00
-+++ b/boost.json	2026-07-18 00:00:00
-@@ -14 +14,2 @@
+diff --git a/boost.json b/boost.json
+--- a/boost.json
++++ b/boost.json
+@@ -14,1 +14,2 @@
+-        "infer-conventions",
 +        "fortify-development",
-         "laravel-best-practices",
-diff -ruN a/bootstrap/app.php b/bootstrap/app.php
---- a/bootstrap/app.php	2026-07-18 00:00:00
-+++ b/bootstrap/app.php	2026-07-18 00:00:00
-@@ -16,2 +16,3 @@
-         $middleware
++        "infer-conventions",
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -17,1 +17,2 @@
+-            ->redirectUsersTo('/')
 +            ->redirectGuestsTo(fn (): string => route('login'))
-             ->redirectUsersTo('/')
-diff -ruN a/bootstrap/providers.php b/bootstrap/providers.php
---- a/bootstrap/providers.php	2026-07-18 00:00:00
-+++ b/bootstrap/providers.php	2026-07-18 00:00:00
-@@ -5 +5,2 @@
- use App\Providers\AppServiceProvider;
++            ->redirectUsersTo('/')
+diff --git a/bootstrap/providers.php b/bootstrap/providers.php
+--- a/bootstrap/providers.php
++++ b/bootstrap/providers.php
+@@ -6,1 +6,2 @@
+-use App\Providers\SqidsServiceProvider;
 +use App\Providers\FortifyServiceProvider;
-@@ -8 +9,2 @@
-     AppServiceProvider::class,
++use App\Providers\SqidsServiceProvider;
+@@ -10,1 +11,2 @@
+-    SqidsServiceProvider::class,
 +    FortifyServiceProvider::class,
-diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
---- a/composer-dependency-analyser.php	2026-08-15 00:00:00
-+++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
-@@ -13 +13,2 @@
++    SqidsServiceProvider::class,
+diff --git a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php
++++ b/composer-dependency-analyser.php
+@@ -13,1 +13,2 @@
+-        'propaganistas/laravel-phone',
 +        'propaganistas/laravel-disposable-email',
-         'propaganistas/laravel-phone',
-diff -ruN a/composer.json b/composer.json
---- a/composer.json	2026-07-18 00:00:00
-+++ b/composer.json	2026-07-18 00:00:00
-@@ -20 +20,2 @@
++        'propaganistas/laravel-phone',
+diff --git a/composer.json b/composer.json
+--- a/composer.json
++++ b/composer.json
+@@ -20,1 +20,2 @@
+-    "laravel/framework": "^13.33.0",
 +    "laravel/fortify": "^1.37.3",
-     "laravel/framework": "^13.24.0",
-@@ -22 +23,2 @@
++    "laravel/framework": "^13.33.0",
+@@ -22,1 +23,2 @@
+-    "propaganistas/laravel-phone": "^6.0.3",
 +    "propaganistas/laravel-disposable-email": "^2.5.1",
-     "propaganistas/laravel-phone": "^6.0.3",
-diff -ruN a/config/fortify.php b/config/fortify.php
---- a/config/fortify.php	1969-12-31 18:00:00
-+++ b/config/fortify.php	2026-07-17 23:35:13
++    "propaganistas/laravel-phone": "^6.0.3",
+diff --git a/config/fortify.php b/config/fortify.php
+new file mode 100644
+--- /dev/null
++++ b/config/fortify.php
 @@ -0,0 +1,161 @@
 +<?php
 +
@@ -444,9 +457,10 @@ diff -ruN a/config/fortify.php b/config/fortify.php
 +    ],
 +
 +];
-diff -ruN a/database/migrations/2025_08_31_000154_add_two_factor_columns_to_users_table.php b/database/migrations/2025_08_31_000154_add_two_factor_columns_to_users_table.php
---- a/database/migrations/2025_08_31_000154_add_two_factor_columns_to_users_table.php	1969-12-31 18:00:00
-+++ b/database/migrations/2025_08_31_000154_add_two_factor_columns_to_users_table.php	2026-07-17 23:35:13
+diff --git a/database/migrations/2025_08_31_000154_add_two_factor_columns_to_users_table.php b/database/migrations/2025_08_31_000154_add_two_factor_columns_to_users_table.php
+new file mode 100644
+--- /dev/null
++++ b/database/migrations/2025_08_31_000154_add_two_factor_columns_to_users_table.php
 @@ -0,0 +1,20 @@
 +<?php
 +
@@ -468,59 +482,77 @@ diff -ruN a/database/migrations/2025_08_31_000154_add_two_factor_columns_to_user
 +        });
 +    }
 +};
-diff -ruN a/phpstan-baseline.neon b/phpstan-baseline.neon
---- a/phpstan-baseline.neon	2026-07-18 06:31:04
-+++ b/phpstan-baseline.neon	2026-07-17 23:35:13
-@@ -1,6 +1,39 @@
- parameters:
- 	ignoreErrors:
- 		-
-+			message: '#^Parameter \#1 \$input \(array\<string, string\>\) of method App\\Actions\\Fortify\\CreateNewUser\:\:create\(\) should be contravariant with parameter \$input \(array\) of method Laravel\\Fortify\\Contracts\\CreatesNewUsers\:\:create\(\)$#'
-+			identifier: method.childParameterType
-+			count: 1
-+			path: app/Actions/Fortify/CreateNewUser.php
-+
-+		-
-+			message: '''
-+				#^Return type of method App\\Actions\\Fortify\\CreateNewUser\:\:passwordRules\(\) has typehint with deprecated interface Illuminate\\Contracts\\Validation\\Rule\:
-+				see ValidationRule$#
-+			'''
-+			identifier: return.deprecatedInterface
-+			count: 1
-+			path: app/Actions/Fortify/CreateNewUser.php
-+
-+		-
-+			message: '''
-+				#^Return type of method App\\Actions\\Fortify\\ResetUserPassword\:\:passwordRules\(\) has typehint with deprecated interface Illuminate\\Contracts\\Validation\\Rule\:
-+				see ValidationRule$#
-+			'''
-+			identifier: return.deprecatedInterface
-+			count: 1
-+			path: app/Actions/Fortify/ResetUserPassword.php
-+
-+		-
-+			message: '''
-+				#^Return type of method App\\Actions\\Fortify\\UpdateUserPassword\:\:passwordRules\(\) has typehint with deprecated interface Illuminate\\Contracts\\Validation\\Rule\:
-+				see ValidationRule$#
-+			'''
-+			identifier: return.deprecatedInterface
-+			count: 1
-+			path: app/Actions/Fortify/UpdateUserPassword.php
-+
-+		-
- 			message: '#^Dynamic call to static method Illuminate\\Foundation\\Application\:\:isProduction\(\)\.$#'
- 			identifier: staticMethod.dynamicCall
- 			count: 2
-diff -ruN a/routes/console.php b/routes/console.php
---- a/routes/console.php	2026-07-18 00:00:00
-+++ b/routes/console.php	2026-07-18 00:00:00
-@@ -5 +5,3 @@
- use Illuminate\Support\Facades\Schedule;
-+
+diff --git a/routes/console.php b/routes/console.php
+--- a/routes/console.php
++++ b/routes/console.php
+@@ -7,1 +7,3 @@
+-Schedule::command('model:prune')->daily();
 +Schedule::command('disposable:update')->weekly();
-diff -ruN a/tests/Integration/Actions/UpdateUserProfileInformationTest.php b/tests/Integration/Actions/UpdateUserProfileInformationTest.php
---- a/tests/Integration/Actions/UpdateUserProfileInformationTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Actions/UpdateUserProfileInformationTest.php	2026-07-17 23:35:13
++
++Schedule::command('model:prune')->daily();
+diff --git a/tests/Integration/Actions/FortifyPasswordTest.php b/tests/Integration/Actions/FortifyPasswordTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Actions/FortifyPasswordTest.php
+@@ -0,0 +1,54 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Actions\Fortify\ResetUserPassword;
++use App\Actions\Fortify\UpdateUserPassword;
++use App\Models\User;
++use Illuminate\Support\Facades\Hash;
++use Illuminate\Validation\ValidationException;
++
++it('resets a password and stores its hash', function (): void {
++    $user = User::factory()->createOne(['password' => 'old-password']);
++
++    resolve(ResetUserPassword::class)->reset($user, [
++        'password' => 'new-password',
++        'password_confirmation' => 'new-password',
++    ]);
++
++    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue()
++        ->and(Hash::check('old-password', $user->password))->toBeFalse();
++});
++
++it('keeps the password when reset confirmation is invalid', function (): void {
++    $user = User::factory()->createOne(['password' => 'old-password']);
++
++    expect(fn () => resolve(ResetUserPassword::class)->reset($user, [
++        'password' => 'new-password',
++        'password_confirmation' => 'different-password',
++    ]))->toThrow(ValidationException::class)
++        ->and(Hash::check('old-password', $user->refresh()->password))->toBeTrue();
++});
++
++it('updates a password after validating the current password', function (): void {
++    $user = login(User::factory()->createOne(['password' => 'old-password']));
++
++    resolve(UpdateUserPassword::class)->update($user, [
++        'current_password' => 'old-password',
++        'password' => 'new-password',
++        'password_confirmation' => 'new-password',
++    ]);
++
++    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
++});
++
++it('rejects a password update with incorrect current credentials', function (): void {
++    $user = login(User::factory()->createOne(['password' => 'old-password']));
++
++    expect(fn () => resolve(UpdateUserPassword::class)->update($user, [
++        'current_password' => 'wrong-password',
++        'password' => 'new-password',
++        'password_confirmation' => 'new-password',
++    ]))->toThrow(ValidationException::class)
++        ->and(Hash::check('old-password', $user->refresh()->password))->toBeTrue();
++});
+diff --git a/tests/Integration/Actions/UpdateUserProfileInformationTest.php b/tests/Integration/Actions/UpdateUserProfileInformationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Actions/UpdateUserProfileInformationTest.php
 @@ -0,0 +1,104 @@
 +<?php
 +
@@ -625,4 +657,49 @@ diff -ruN a/tests/Integration/Actions/UpdateUserProfileInformationTest.php b/tes
 +        ->last_name->toBe('Name');
 +
 +    Notification::assertSentTo($user, VerifyEmail::class);
++});
+diff --git a/tests/Integration/Actions/CreateNewUserTest.php b/tests/Integration/Actions/CreateNewUserTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Actions/CreateNewUserTest.php
+@@ -0,0 +1,40 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertDatabaseHas;
++
++use App\Actions\Fortify\CreateNewUser;
++use App\Models\User;
++use Illuminate\Support\Facades\Hash;
++use Illuminate\Validation\ValidationException;
++
++it('creates a user from validated registration data', function (): void {
++    $user = resolve(CreateNewUser::class)->create([
++        'email' => 'template-user@laravel.com',
++        'first_name' => 'Jane',
++        'last_name' => 'Doe',
++        'password' => 'new-password',
++        'password_confirmation' => 'new-password',
++    ]);
++
++    assertDatabaseHas(User::class, [
++        'id' => $user->id,
++        'email' => 'template-user@laravel.com',
++        'first_name' => 'Jane',
++        'last_name' => 'Doe',
++    ]);
++
++    expect(Hash::check('new-password', $user->password))->toBeTrue();
++});
++
++it('rejects unvalidated registration input before persistence', function (): void {
++    expect(fn () => resolve(CreateNewUser::class)->create([
++        'email' => ['invalid'],
++        'first_name' => false,
++        'last_name' => 123,
++        'password' => 'new-password',
++        'password_confirmation' => 'new-password',
++    ]))->toThrow(ValidationException::class)
++        ->and(User::query()->count())->toBe(0);
 +});
