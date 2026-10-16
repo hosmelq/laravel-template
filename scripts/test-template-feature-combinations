@@ -219,6 +219,12 @@ for ((mask = 1; mask <= total; mask++)); do
         grep -Fq '<directory>tests/Browser</directory>' "$scenario/phpunit.xml"
         grep -Fq -- "->in('Browser', 'Feature', 'Integration', 'Unit');" "$scenario/tests/Pest.php"
         grep -Fq 'nub exec playwright install --with-deps' "$scenario/.github/workflows/ci.yml"
+        grep -Fq 'run: nub exec tsc -b' "$scenario/lefthook.yml"
+        if grep -Fq 'nub exec tsgo' "$scenario/lefthook.yml"; then
+            printf 'The frontend hook must use the installed TypeScript compiler.\n' >&2
+
+            exit 1
+        fi
     fi
 done
 

@@ -847,8 +847,8 @@ diff --git a/lefthook.yml b/lefthook.yml
 +    - name: Backend
 @@ -36,1 +50,4 @@
 -    - name: PHPStan
-+    - name: tsgo
-+      run: nub exec tsgo -b
++    - name: tsc
++      run: nub exec tsc -b
 +
 +    - name: PHPStan
 diff --git a/mise.toml b/mise.toml

@@ -25,6 +25,8 @@ parameters:
     - config
     - database
     - routes
+  strictRules:
+    dynamicCallOnStaticMethod: false
   type_coverage:
     constant: 100
     param: 100
