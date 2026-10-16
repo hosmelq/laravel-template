@@ -139,7 +139,7 @@ return [
 
         'sentry_logs' => [
             'driver' => 'sentry_logs',
-            'level' => env('LOG_LEVEL', 'debug'), // defaults to `debug` if not set
+            'level' => env('LOG_LEVEL', 'info'),
         ],
 
     ],
