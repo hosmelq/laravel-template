@@ -8,23 +8,57 @@ diff --git a/.codex/config.toml b/.codex/config.toml
 +args = ["-y", "@react-aria/mcp@latest"]
 +
 +[mcp_servers.laravel-boost]
+diff --git a/.env.example b/.env.example
+--- a/.env.example
++++ b/.env.example
+@@ -34,1 +34,5 @@
+-SLACK_BOT_USER_OAUTH_TOKEN=
++SLACK_BOT_USER_OAUTH_TOKEN=
++
++VITE_POSTHOG_HOST=https://us.i.posthog.com
++VITE_POSTHOG_KEY=
++VITE_SENTRY_DSN=
 diff --git a/.github/renovate.json b/.github/renovate.json
 --- a/.github/renovate.json
 +++ b/.github/renovate.json
-@@ -67,1 +67,2 @@
+@@ -10,1 +10,2 @@
+-        "devEngines.packageManager[name = 'nub'].{'currentValue': version, 'depName': 'nub', 'depType': 'packageManager', 'packageName': '@nubjs/nub'}"
++        "devEngines.packageManager[name = 'nub'].{'currentValue': version, 'depName': 'nub', 'depType': 'packageManager', 'packageName': '@nubjs/nub'}",
++        "packageExtensions.*.dependencies.$each(function($version, $name) { {'currentValue': $version, 'depName': $name, 'depType': 'packageExtensions'} })"
+@@ -61,1 +62,8 @@
+-  ],
++  ],
++  "hostRules": [
++    {
++      "hostType": "npm",
++      "matchHost": "https://npm.fontawesome.com/",
++      "token": "{{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}"
++    }
++  ],
+@@ -66,1 +74,2 @@
 -    "mise.toml"
 +    "mise.toml",
 +    "package.json"
+@@ -68,1 +77,2 @@
+-  "minimumReleaseAge": "1 day",
++  "minimumReleaseAge": "1 day",
++  "npmrc": "@fortawesome:registry=https://npm.fontawesome.com/",
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -16,1 +16,3 @@
+@@ -11,1 +11,3 @@
 -env:
 +env:
 +  NODE_VERSION: '26.10.0'
 +  NUB_VERSION: '0.9.5'
-@@ -54,1 +56,24 @@
--      - name: Check PHP code style
+@@ -38,1 +40,3 @@
+-
++
++    environment: package-registries
++
+@@ -48,1 +52,32 @@
+-
++
 +      - name: Prepare composer dependencies
 +        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
 +        with:
@@ -33,8 +67,16 @@ diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +          php-tools: ''
 +          php-version: ${{ env.PHP_VERSION }}
 +
++      - name: Configure npm auth
++        env:
++          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
++        run: printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > "${RUNNER_TEMP}/npmrc"
++
 +      - name: Install npm dependencies
 +        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
++        env:
++          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
++          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
 +        with:
 +          node-version: ${{ env.NODE_VERSION }}
 +          nub-version: ${{ env.NUB_VERSION }}
@@ -48,11 +90,13 @@ diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +      - name: Check JavaScript format
 +        run: nub run fmt:check
 +
-+      - name: Check PHP code style
-@@ -125,1 +150,40 @@
--  php-dependencies:
+@@ -119,1 +154,50 @@
+-
++
 +  frontend-build:
 +    name: Frontend build
++
++    environment: package-registries
 +
 +    runs-on: ubuntu-latest
 +
@@ -72,8 +116,16 @@ diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +          php-tools: ''
 +          php-version: ${{ env.PHP_VERSION }}
 +
++      - name: Configure npm auth
++        env:
++          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
++        run: printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > "${RUNNER_TEMP}/npmrc"
++
 +      - name: Install npm dependencies
 +        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
++        env:
++          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
++          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
 +        with:
 +          node-version: ${{ env.NODE_VERSION }}
 +          nub-version: ${{ env.NUB_VERSION }}
@@ -82,7 +134,7 @@ diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +        run: nub run build
 +
 +      - name: Upload frontend artifact
-+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
++        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
 +        with:
 +          name: frontend-build
 +          if-no-files-found: error
@@ -90,48 +142,177 @@ diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 +            public/build
 +          retention-days: 1
 +
-+  php-dependencies:
-@@ -155,1 +219,1 @@
+@@ -154,1 +238,2 @@
+-      - check-unused-composer-dependencies
++      - check-unused-composer-dependencies
++      - frontend-build
+@@ -191,1 +276,3 @@
+-
++
++    environment: package-registries
++
+@@ -198,1 +285,1 @@
 -    needs: php-dependencies
 +    needs: [frontend-build, php-dependencies]
-@@ -179,1 +243,16 @@
--      - name: Setup problem matchers
+@@ -221,1 +308,24 @@
+-
++
 +      - name: Download frontend artifact
-+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
++        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 +        with:
 +          name: frontend-build
 +          path: public/build
 +
++      - name: Configure npm auth
++        env:
++          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
++        run: printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > "${RUNNER_TEMP}/npmrc"
++
 +      - name: Install npm dependencies
 +        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
++        env:
++          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
++          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
 +        with:
 +          node-version: ${{ env.NODE_VERSION }}
 +          nub-version: ${{ env.NUB_VERSION }}
 +
 +      - name: Install Playwright browsers
-+        run: nub exec playwright install --with-deps
++        run: nubx playwright install --with-deps chromium
 +
-+      - name: Setup problem matchers
+diff --git a/.github/workflows/pullfrog.yml b/.github/workflows/pullfrog.yml
+--- a/.github/workflows/pullfrog.yml
++++ b/.github/workflows/pullfrog.yml
+@@ -22,1 +22,3 @@
+-env:
++env:
++  NODE_VERSION: '26.10.0'
++  NUB_VERSION: '0.9.5'
+@@ -28,1 +30,3 @@
+-
++
++    environment: package-registries
++
+@@ -47,1 +51,21 @@
+-
++
++      - name: Configure npm auth
++        env:
++          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
++        run: printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > "${RUNNER_TEMP}/npmrc"
++
++      - name: Install npm dependencies
++        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
++        env:
++          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
++          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
++        with:
++          node-version: ${{ env.NODE_VERSION }}
++          nub-version: ${{ env.NUB_VERSION }}
++
++      - name: Build frontend
++        run: nub run build
++
++      - name: Install Playwright browsers
++        run: nubx playwright install --with-deps chromium
++
+@@ -59,1 +83,4 @@
+-        uses: pullfrog/pullfrog@v0
++        uses: pullfrog/pullfrog@v0
++        env:
++          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
++          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
+diff --git a/.github/workflows/tia-baseline.yml b/.github/workflows/tia-baseline.yml
+--- a/.github/workflows/tia-baseline.yml
++++ b/.github/workflows/tia-baseline.yml
+@@ -15,1 +15,3 @@
+-env:
++env:
++  NODE_VERSION: '26.10.0'
++  NUB_VERSION: '0.9.5'
+@@ -21,1 +23,3 @@
+-
++
++    environment: package-registries
++
+@@ -37,1 +41,21 @@
+-
++
++      - name: Configure npm auth
++        env:
++          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
++        run: printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > "${RUNNER_TEMP}/npmrc"
++
++      - name: Install npm dependencies
++        uses: hosmelq/.github/.github/actions/npm-install@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
++        env:
++          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
++          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
++        with:
++          node-version: ${{ env.NODE_VERSION }}
++          nub-version: ${{ env.NUB_VERSION }}
++
++      - name: Build frontend
++        run: nub run build
++
++      - name: Install Playwright browsers
++        run: nubx playwright install --with-deps chromium
++
 diff --git a/.github/workflows/update-generated-files.yml b/.github/workflows/update-generated-files.yml
 --- a/.github/workflows/update-generated-files.yml
 +++ b/.github/workflows/update-generated-files.yml
-@@ -141,1 +141,4 @@
--      - name: Update Laravel Boost guidelines
+@@ -21,1 +21,3 @@
+-
++
++    environment: package-registries
++
+@@ -48,1 +50,12 @@
+-
++
++      - name: Configure npm auth
++        env:
++          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
++        run: printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > "${RUNNER_TEMP}/npmrc"
++
 +      - name: Install npm dependencies
++        env:
++          HEROUI_AUTH_TOKEN: ${{ secrets.HEROUI_AUTH_TOKEN }}
++          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/npmrc
 +        run: nub install --ignore-scripts --no-frozen-lockfile
 +
-+      - name: Update Laravel Boost guidelines
 diff --git a/.gitignore b/.gitignore
 --- a/.gitignore
 +++ b/.gitignore
-@@ -18,1 +18,2 @@
+@@ -20,1 +20,2 @@
 -/auth.json
 +/auth.json
 +/bootstrap/ssr
-@@ -24,1 +25,2 @@
--/storage/pail
-+/storage/pail
-+/tests/Browser/Screenshots
+@@ -41,1 +42,3 @@
+-resources/js/wayfinder
++resources/js/wayfinder
++tests/Browser/Screenshots
++tests/Browser/Traces
+diff --git a/.mcp.json b/.mcp.json
+--- a/.mcp.json
++++ b/.mcp.json
+@@ -8,1 +8,8 @@
+-            ]
++            ]
++        },
++        "react-aria": {
++            "command": "nubx",
++            "args": [
++                "-y",
++                "@react-aria/mcp@latest"
++            ]
+diff --git a/.npmrc b/.npmrc
+new file mode 100644
+--- /dev/null
++++ b/.npmrc
+@@ -0,0 +1,3 @@
++@fortawesome:registry = https://npm.fontawesome.com/
++
++minimum-release-age=1440
 diff --git a/.oxfmtrc.json b/.oxfmtrc.json
 new file mode 100644
 --- /dev/null
@@ -402,32 +583,41 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +use App\Enums\FlashKey;
 +use App\Enums\ToastVariant;
 +use App\Models\User;
-@@ -13,1 +15,2 @@
+@@ -14,1 +16,2 @@
 -use Illuminate\Foundation\Http\FormRequest;
 +use Illuminate\Foundation\Http\FormRequest;
 +use Illuminate\Http\RedirectResponse;
-@@ -19,1 +22,2 @@
+@@ -22,1 +25,2 @@
 -use Illuminate\Support\Facades\URL;
 +use Illuminate\Support\Facades\URL;
 +use Illuminate\Support\Facades\Vite;
-@@ -21,1 +25,2 @@
+@@ -24,1 +28,2 @@
 -use Illuminate\Validation\Rules\Password;
 +use Illuminate\Validation\Rules\Password;
 +use Inertia\Inertia;
-@@ -34,1 +39,2 @@
+@@ -39,1 +44,2 @@
 -        $this->configureResources();
 +        $this->configureResources();
 +        $this->configureRouteMacros();
-@@ -35,1 +41,2 @@
+@@ -40,1 +46,2 @@
 -        $this->configureUrls();
 +        $this->configureUrls();
 +        $this->configureVite();
-@@ -44,1 +51,3 @@
+@@ -52,1 +59,1 @@
+-        DevCommands::only('logs', 'queue', 'schedule', 'vite');
++        DevCommands::only('logs', 'queue', 'schedule', 'server', 'vite');
+@@ -54,1 +61,9 @@
 -        DevCommands::artisan('schedule:work --whisper', 'schedule');
 +        DevCommands::artisan('schedule:work --whisper', 'schedule');
 +
-+        DevCommands::register('nub run dev', 'vite');
-@@ -97,1 +106,20 @@
++        DevCommands::register(
++            <<<'COMMAND'
++            nub exec portless run sh -c 'exec php artisan octane:start --admin-port="$((PORT + 10000))" --host="$HOST" --port="$PORT" --watch'
++            COMMAND,
++            'server',
++        );
++        DevCommands::register('nub exec portless run --name template-vite nub run dev', 'vite');
+@@ -112,1 +112,20 @@
 -    private function configureUrls(): void
 +    private function configureRouteMacros(): void
 +    {
@@ -449,7 +639,7 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +    }
 +
 +    private function configureUrls(): void
-@@ -101,1 +129,6 @@
+@@ -116,1 +116,6 @@
 -}
 +
 +    private function configureVite(): void
@@ -488,18 +678,19 @@ new file mode 100644
 +    }
 +}
 diff --git a/app/functions.php b/app/functions.php
---- a/app/functions.php
+new file mode 100644
+--- /dev/null
 +++ b/app/functions.php
-@@ -7,1 +7,5 @@
--/**
+@@ -0,0 +1,23 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App;
++
 +use App\Enums\FlashKey;
 +use App\Enums\ToastVariant;
 +use Inertia\Inertia;
-+
-+/**
-@@ -19,1 +23,15 @@
--}
-+}
 +
 +function toast(
 +    string $title,
@@ -531,12 +722,20 @@ diff --git a/boost.json b/boost.json
 diff --git a/bootstrap/app.php b/bootstrap/app.php
 --- a/bootstrap/app.php
 +++ b/bootstrap/app.php
-@@ -6,1 +6,3 @@
--use App\Http\Middleware\EnsureAdmin;
-+use App\Http\Middleware\EnsureAdmin;
+@@ -5,1 +5,3 @@
+-use App\Http\Middleware\DecodeSqids;
++use App\Http\Middleware\DecodeSqids;
 +use App\Http\Middleware\HandleInertiaRequests;
 +use App\Http\Middleware\SetLocale;
-@@ -25,1 +27,5 @@
+@@ -8,1 +10,2 @@
+-use Illuminate\Foundation\Configuration\Middleware;
++use Illuminate\Foundation\Configuration\Middleware;
++use Illuminate\Routing\Middleware\ThrottleRequests;
+@@ -21,1 +24,2 @@
+-            ])
++            ])
++            ->prependToPriorityList(ThrottleRequests::class, SetLocale::class)
+@@ -23,1 +27,5 @@
 -            ->throttleApi();
 +            ->throttleApi()
 +            ->web(append: [
@@ -578,23 +777,33 @@ diff --git a/composer.json b/composer.json
 +    "laravel/tinker": "^3.0.2",
 +    "laravel/wayfinder": "^0.1.21",
 @@ -24,1 +27,2 @@
--    "sentry/sentry-laravel": "^4.28.0",
-+    "sentry/sentry-laravel": "^4.28.0",
+-    "sentry/sentry-laravel": "^4.29.0",
++    "sentry/sentry-laravel": "^4.29.0",
 +    "spatie/laravel-typescript-transformer": "^3.3.0",
 @@ -43,1 +47,2 @@
 -    "pestphp/pest-plugin-agent": "^5.0",
 +    "pestphp/pest-plugin-agent": "^5.0",
-+    "pestphp/pest-plugin-browser": "^5.0",
++    "pestphp/pest-plugin-browser": "^5.1",
 @@ -109,1 +114,3 @@
--    "test": "scripts/test"
-+    "test": "scripts/test",
+-    "rector": "rector"
++    "rector": "rector",
 +    "typescript": "@php artisan typescript:transform --no-interaction",
 +    "wayfinder": "@php artisan wayfinder:generate --skip-routes"
 @@ -115,1 +122,3 @@
--    "test": "Runs the application tests."
-+    "test": "Runs the application tests.",
+-    "rector": "Runs Rector."
++    "rector": "Runs Rector.",
 +    "typescript": "Generates TypeScript definitions from PHP types.",
 +    "wayfinder": "Generates TypeScript definitions for routes and controller methods."
+@@ -68,3 +68,6 @@
+-    }
+-  },
+-  "autoload-dev": {
++    },
++    "files": [
++      "app/functions.php"
++    ]
++  },
++  "autoload-dev": {
 diff --git a/config/inertia.php b/config/inertia.php
 new file mode 100644
 --- /dev/null
@@ -827,44 +1036,39 @@ diff --git a/lefthook.yml b/lefthook.yml
 +            stage_fixed: true
 +
 +    - name: Backend
-@@ -36,1 +50,4 @@
--    - name: PHPStan
-+    - name: tsc
-+      run: nub exec tsc -b
-+
-+    - name: PHPStan
 diff --git a/mise.toml b/mise.toml
 --- a/mise.toml
 +++ b/mise.toml
-@@ -96,1 +96,2 @@
+@@ -54,1 +54,3 @@
+-[env]
++[env]
++_.file = { path = "{{ env.HOME }}/.config/template/env", redact = true }
++
+@@ -57,1 +59,2 @@
+-COMPOSE_MAILPIT_PORT = "0"
++COMPOSE_MAILPIT_PORT = "0"
++NPM_CONFIG_USERCONFIG = "{{ env.HOME }}/.config/template/npmrc"
+@@ -112,1 +115,2 @@
 -  "composer install",
 +  "composer install",
 +  "nub ci",
-@@ -107,1 +108,1 @@
+@@ -123,1 +127,1 @@
 -run = "php artisan package:discover --ansi"
 +run = "nub run build"
-diff --git a/nub.jsonc b/nub.jsonc
-new file mode 100644
---- /dev/null
-+++ b/nub.jsonc
-@@ -0,0 +1,12 @@
-+{
-+  "$schema": "https://nubjs.com/schema/v0.7.json",
-+  "install": {
-+    "publicHoist": [
-+      "@heroui/*",
-+      "@inertiajs/*",
-+      "@internationalized/date",
-+      "@react-types/*",
-+      "react-aria-components",
-+    ],
-+  },
-+}
+@@ -132,1 +136,2 @@
+-run = [
++run = [
++  "nub run build",
+@@ -133,1 +138,3 @@
+-  "vendor/bin/composer-dependency-analyser",
++  "vendor/bin/composer-dependency-analyser",
++  "nub run fmt:check",
++  "nub run lint",
 diff --git a/package.json b/package.json
 new file mode 100644
 --- /dev/null
 +++ b/package.json
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,94 @@
 +{
 +  "$schema": "https://www.schemastore.org/package.json",
 +  "name": "template",
@@ -882,14 +1086,28 @@ new file mode 100644
 +    "preview": "vite preview"
 +  },
 +  "dependencies": {
++    "@fortawesome/fontawesome-svg-core": "^7.3.1",
++    "@fortawesome/pro-regular-svg-icons": "^7.3.1",
++    "@fortawesome/pro-solid-svg-icons": "^7.3.1",
++    "@fortawesome/react-fontawesome": "^3.5.0",
++    "@heroui-pro/react": "^1.0.0-beta.10",
 +    "@heroui/react": "^3.2.6",
 +    "@heroui/styles": "^3.2.6",
++    "@inertiajs/core": "^3.7.1",
 +    "@inertiajs/react": "^3.7.1",
 +    "@inertiaui/modal-react": "^3.1.2",
++    "@internationalized/date": "3.12.4",
++    "@react-stately/utils": "3.12.1",
 +    "@sentry/react": "^11.0.0",
++    "motion": "^13.4.4",
++    "posthog-js": "^1.434.15",
 +    "react": "^19.3.0",
++    "react-aria": "3.52.1",
 +    "react-aria-components": "^1.21.1",
-+    "react-dom": "^19.3.0"
++    "react-dom": "^19.3.0",
++    "react-resizable-panels": "^4.14.1",
++    "tailwind-merge": "3.7.0",
++    "tailwind-variants": "^3.3.1"
 +  },
 +  "devDependencies": {
 +    "@babel/core": "^8.0.6",
@@ -911,6 +1129,7 @@ new file mode 100644
 +    "oxlint": "^1.85.0",
 +    "oxlint-tsgolint": "^7.0.2003",
 +    "playwright": "^1.63.0",
++    "portless": "^0.15.6",
 +    "tailwindcss": "^4.3.3",
 +    "tailwindcss-react-aria-components": "^2.2.0",
 +    "typescript": "^7.0.2",
@@ -923,11 +1142,25 @@ new file mode 100644
 +    "packageManager": {
 +      "name": "nub",
 +      "version": "0.9.5",
-+      "onFail": "warn"
++      "onFail": "ignore"
 +    }
 +  },
 +  "allowScripts": {
-+    "@sentry/cli": true
++    "@heroui-pro/react": true,
++    "@sentry/cli": true,
++    "@zowe/secrets-for-zowe-sdk": true,
++    "core-js": true,
++    "esbuild": true
++  },
++  "packageExtensions": {
++    "@heroui-pro/react": {
++      "dependencies": {
++        "@react-aria/interactions": "3.28.1",
++        "@react-aria/utils": "3.34.1",
++        "react-aria-components": "1.21.1",
++        "tailwind-variants": "3.3.1"
++      }
++    }
 +  }
 +}
 diff --git a/phpunit.xml b/phpunit.xml
@@ -943,19 +1176,30 @@ diff --git a/phpunit.xml b/phpunit.xml
 -        <env name="APP_ENV" value="testing"/>
 +        <env name="APP_ENV" value="testing"/>
 +        <env name="INERTIA_SSR_ENABLED" value="false"/>
+diff --git a/portless.json b/portless.json
+new file mode 100644
+--- /dev/null
++++ b/portless.json
+@@ -0,0 +1,3 @@
++{
++  "name": "template"
++}
 diff --git a/resources/js/app.tsx b/resources/js/app.tsx
 new file mode 100644
 --- /dev/null
 +++ b/resources/js/app.tsx
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,55 @@
 +import './index.css'
 +import './telemetry'
++import {config} from '@fortawesome/fontawesome-svg-core'
 +import {RouterProvider, toast as heroToast, Toast} from '@heroui/react'
 +import {createInertiaApp, router, type ResolvedComponent} from '@inertiajs/react'
 +import {ModalStackProvider} from '@inertiaui/modal-react'
 +import {I18nProvider} from 'react-aria-components'
 +
-+import {Modal as ModalLayout} from './layouts/Modal'
++import {layoutFor} from '#/layouts'
++
++config.autoAddCss = false
 +
 +router.on('flash', (event) => {
 +  const {toast} = event.detail.flash
@@ -972,7 +1216,7 @@ new file mode 100644
 +})
 +
 +void createInertiaApp({
-+  layout: () => ModalLayout,
++  layout: (name) => layoutFor(name),
 +  progress: {
 +    color: 'var(--accent)',
 +  },
@@ -1039,17 +1283,271 @@ new file mode 100644
 +    </InertiaForm>
 +  )
 +}
+diff --git a/resources/js/components/Layout.tsx b/resources/js/components/Layout.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/components/Layout.tsx
+@@ -0,0 +1,122 @@
++import {cn} from '@heroui/react'
++import type {ReactNode} from 'react'
++
++interface BodyProps {
++  children: ReactNode
++  noRowGap?: boolean
++}
++
++export function Body(props: BodyProps) {
++  return (
++    <div
++      className={cn(
++        'grow bg-background p-4 lg:grid lg:grid-cols-[minmax(100px,auto)_325px] lg:content-start',
++        props.noRowGap ? 'md:px-8 md:py-4 lg:gap-x-6' : 'md:px-8 md:py-6 lg:gap-6',
++      )}
++    >
++      {props.children}
++    </div>
++  )
++}
++
++interface HeaderProps {
++  borderStyle?: 'dashed' | 'solid'
++  children: ReactNode
++  noActionWrap?: boolean
++  unified?: boolean
++}
++
++export function Header(props: HeaderProps) {
++  return (
++    <header
++      className={cn(
++        'grid px-4 pt-4 md:grid-cols-[minmax(0,1fr)_auto] md:px-8',
++        props.noActionWrap ? 'grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-1',
++        !props.unified &&
++          `border-b border-border ${props.borderStyle === 'dashed' ? 'border-dashed' : 'border-solid'}`,
++        props.unified ? 'bg-background' : 'bg-transparent',
++      )}
++    >
++      {props.children}
++    </header>
++  )
++}
++
++interface HeaderActionsProps {
++  children: ReactNode
++}
++
++export function HeaderActions(props: HeaderActionsProps) {
++  return (
++    <div className="mt-0.5 mb-4 flex w-max min-w-max flex-col justify-normal md:mb-0 md:w-auto">
++      {props.children}
++    </div>
++  )
++}
++
++interface HeaderContentProps {
++  children: ReactNode
++  unified?: boolean
++}
++
++export function HeaderContent(props: HeaderContentProps) {
++  return (
++    <div className={cn('flex w-full flex-col justify-normal', !props.unified && 'mb-2')}>
++      {props.children}
++    </div>
++  )
++}
++
++interface MainProps {
++  children: ReactNode
++  width?: 'full-constrained' | 'two-thirds'
++}
++
++export function Main(props: MainProps) {
++  const {children, width = 'two-thirds'} = props
++
++  return (
++    <section className={cn('w-full', width === 'two-thirds' ? 'col-[1/2]' : 'col-[1/3]')}>
++      {width === 'full-constrained' ? <div className="max-w-7xl">{children}</div> : children}
++    </section>
++  )
++}
++
++interface PageProps {
++  children: ReactNode
++  withPadding?: boolean
++}
++
++export function Page(props: PageProps) {
++  return (
++    <main className={cn('flex flex-1 flex-col', props.withPadding && 'px-8 py-6')}>
++      {props.children}
++    </main>
++  )
++}
++
++interface TitleProps {
++  children: ReactNode
++  withMargins?: boolean
++}
++
++export function Title(props: TitleProps) {
++  return (
++    <h1
++      className={cn(
++        'flex items-center gap-2 truncate text-2xl leading-10 font-semibold',
++        props.withMargins && 'mt-2 mb-6',
++      )}
++    >
++      {props.children}
++    </h1>
++  )
++}
++
++interface SideProps {
++  children: ReactNode
++}
++
++export function Side(props: SideProps) {
++  return <aside className="col-[2/3]">{props.children}</aside>
++}
+diff --git a/resources/js/components/UnsavedChangesBar.tsx b/resources/js/components/UnsavedChangesBar.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/components/UnsavedChangesBar.tsx
+@@ -0,0 +1,106 @@
++import {faCircle} from '@fortawesome/pro-solid-svg-icons'
++import {FontAwesomeIcon} from '@fortawesome/react-fontawesome'
++import {ActionBar} from '@heroui-pro/react'
++import {AlertDialog, Button, Chip, Separator} from '@heroui/react'
++import type {PendingVisit, VisitCallbacks} from '@inertiajs/core'
++import {router} from '@inertiajs/react'
++import {useEffect, useRef, useState} from 'react'
++
++interface UnsavedChangesBarProps {
++  isDirty: boolean
++  isPending: boolean
++  onDiscard: () => void
++}
++
++export function UnsavedChangesBar(props: UnsavedChangesBarProps) {
++  const {isDirty, isPending, onDiscard} = props
++  const [blockedVisit, setBlockedVisit] = useState<null | (PendingVisit & Partial<VisitCallbacks>)>(
++    null,
++  )
++  const isLeavingRef = useRef(false)
++
++  useEffect(() => {
++    if (!isDirty) {
++      return
++    }
++
++    return router.on('before', (event) => {
++      const visit = event.detail.visit
++
++      if (
++        isLeavingRef.current ||
++        visit.method !== 'get' ||
++        visit.prefetch ||
++        visit.url.href === window.location.href ||
++        (visit.url.pathname === window.location.pathname &&
++          (visit.only.length > 0 || visit.except.length > 0))
++      ) {
++        return
++      }
++
++      event.preventDefault()
++      setBlockedVisit(visit)
++    })
++  }, [isDirty])
++
++  const leave = () => {
++    if (!blockedVisit) {
++      return
++    }
++
++    isLeavingRef.current = true
++    setBlockedVisit(null)
++    router.visit(blockedVisit.url, {
++      ...blockedVisit,
++      onFinish: (visit) => {
++        isLeavingRef.current = false
++        blockedVisit.onFinish?.(visit)
++      },
++    })
++  }
++
++  return (
++    <>
++      <ActionBar aria-label="Unsaved changes" isOpen={isDirty}>
++        <ActionBar.Prefix>
++          <Chip color="warning" size="sm">
++            <FontAwesomeIcon className="size-1.5" icon={faCircle} />
++            <Chip.Label>Unsaved changes</Chip.Label>
++          </Chip>
++        </ActionBar.Prefix>
++        <Separator orientation="vertical" />
++        <ActionBar.Content>
++          <Button isDisabled={isPending} size="sm" variant="ghost" onPress={onDiscard}>
++            Discard
++          </Button>
++          <Button isPending={isPending} size="sm" type="submit">
++            Save
++          </Button>
++        </ActionBar.Content>
++      </ActionBar>
++      <AlertDialog.Backdrop
++        isOpen={blockedVisit !== null}
++        onOpenChange={(isOpen) => !isOpen && setBlockedVisit(null)}
++      >
++        <AlertDialog.Container>
++          <AlertDialog.Dialog>
++            <AlertDialog.Header>
++              <AlertDialog.Heading>Discard changes?</AlertDialog.Heading>
++            </AlertDialog.Header>
++            <AlertDialog.Body>
++              If you leave now, your unsaved changes will be lost.
++            </AlertDialog.Body>
++            <AlertDialog.Footer>
++              <Button slot="close" variant="tertiary">
++                Keep editing
++              </Button>
++              <Button variant="danger" onPress={leave}>
++                Discard
++              </Button>
++            </AlertDialog.Footer>
++          </AlertDialog.Dialog>
++        </AlertDialog.Container>
++      </AlertDialog.Backdrop>
++    </>
++  )
++}
 diff --git a/resources/js/index.css b/resources/js/index.css
 new file mode 100644
 --- /dev/null
 +++ b/resources/js/index.css
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,8 @@
 +@import 'tailwindcss';
++@import '@fortawesome/fontawesome-svg-core/styles.css' layer(base);
 +@import '@heroui/styles';
++@import '@heroui-pro/react/css';
 +
 +@plugin 'tailwindcss-react-aria-components';
 +
 +@source '../views';
+diff --git a/resources/js/layouts/App.tsx b/resources/js/layouts/App.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/layouts/App.tsx
+@@ -0,0 +1,9 @@
++import type {ReactNode} from 'react'
++
++interface AppProps {
++  children: ReactNode
++}
++
++export function App(props: AppProps) {
++  return <div className="flex min-h-screen flex-col outline-none">{props.children}</div>
++}
 diff --git a/resources/js/layouts/Modal.tsx b/resources/js/layouts/Modal.tsx
 new file mode 100644
 --- /dev/null
@@ -1069,6 +1567,29 @@ new file mode 100644
 +      <ModalRoot />
 +    </>
 +  )
++}
+diff --git a/resources/js/layouts/index.ts b/resources/js/layouts/index.ts
+new file mode 100644
+--- /dev/null
++++ b/resources/js/layouts/index.ts
+@@ -0,0 +1,18 @@
++import type {ComponentType, ReactNode} from 'react'
++
++import {App} from './App'
++import {Modal} from './Modal'
++
++type Layout = ComponentType<{children: ReactNode}>
++
++const layouts: Record<string, Layout[]> = {
++  '': [Modal, App],
++}
++
++export function layoutFor(name: string): Layout[] {
++  const prefix = Object.keys(layouts)
++    .filter((key) => name.startsWith(key))
++    .reduce((longest, key) => (key.length > longest.length ? key : longest), '')
++
++  return layouts[prefix] ?? []
 +}
 diff --git a/resources/js/pages/Home.tsx b/resources/js/pages/Home.tsx
 new file mode 100644
@@ -1090,22 +1611,23 @@ diff --git a/resources/js/telemetry.ts b/resources/js/telemetry.ts
 new file mode 100644
 --- /dev/null
 +++ b/resources/js/telemetry.ts
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,17 @@
 +import * as Sentry from '@sentry/react'
++import posthog from 'posthog-js'
 +
 +if (import.meta.env.PROD && !import.meta.env.SSR) {
 +  Sentry.init({
 +    dsn: import.meta.env.VITE_SENTRY_DSN,
-+    integrations: [
-+      Sentry.browserProfilingIntegration(),
-+      Sentry.browserTracingIntegration(),
-+      Sentry.captureConsoleIntegration(),
-+      Sentry.replayIntegration(),
-+    ],
-+    replaysOnErrorSampleRate: 1.0,
-+    replaysSessionSampleRate: 0.25,
++    integrations: [Sentry.browserProfilingIntegration(), Sentry.browserTracingIntegration()],
 +    tracesSampleRate: 0.25,
 +  })
++
++  if (import.meta.env.VITE_POSTHOG_KEY) {
++    posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
++      api_host: import.meta.env.VITE_POSTHOG_HOST,
++      defaults: '2025-11-30',
++    })
++  }
 +}
 diff --git a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
 new file mode 100644
@@ -1131,7 +1653,7 @@ new file mode 100644
 +      auth: {
 +        user: null | UserResource
 +      }
-+      locale: string
++      locale: 'en-US' | 'es-419'
 +    }
 +  }
 +}
@@ -1145,7 +1667,7 @@ diff --git a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
 new file mode 100644
 --- /dev/null
 +++ b/resources/js/types/laravel.ts
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,49 @@
 +/* Types */
 +
 +export interface Pagination<T> {
@@ -1172,6 +1694,13 @@ new file mode 100644
 +  }
 +}
 +
++/* Responses */
++
++export interface UnprocessableContentResponse {
++  errors: Record<string, string[]>
++  message: string
++}
++
 +/* Resources */
 +
 +interface Resource {
@@ -1192,15 +1721,24 @@ diff --git a/resources/js/vite-env.d.ts b/resources/js/vite-env.d.ts
 new file mode 100644
 --- /dev/null
 +++ b/resources/js/vite-env.d.ts
-@@ -0,0 +1 @@
+@@ -0,0 +1,7 @@
 +/// <reference types="vite/client" />
++
++interface ImportMetaEnv {
++  readonly VITE_POSTHOG_HOST?: string
++  readonly VITE_POSTHOG_KEY?: string
++  readonly VITE_SENTRY_DSN?: string
++}
 diff --git a/resources/views/app.blade.php b/resources/views/app.blade.php
 new file mode 100644
 --- /dev/null
 +++ b/resources/views/app.blade.php
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,27 @@
++@use('App\Enums\Locale')
++@use('Illuminate\Support\Facades\App')
++
 +<!DOCTYPE html>
-+<html lang="{{ str_replace('_', '-', Config::string('app.locale')) }}">
++<html lang="{{ Locale::from(App::getLocale())->languageTag() }}">
 +    <head>
 +        <meta charset="utf-8" />
 +        <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1209,7 +1747,7 @@ new file mode 100644
 +
 +        <meta name="theme-color" content="#ffffff" />
 +
-+        @fonts('sans')
++        @fonts(['mono', 'sans'])
 +
 +        @viteReactRefresh
 +        @vite('resources/js/app.tsx')
@@ -1248,6 +1786,16 @@ diff --git a/routes/web.php b/routes/web.php
 +    Route::middleware('verified')->scopeBindings()->group(function (): void {
 +    });
 +});
+diff --git a/scripts/services-start b/scripts/services-start
+--- a/scripts/services-start
++++ b/scripts/services-start
+@@ -52,1 +52,5 @@
+-
++
++if [ -n "${ORCA_WORKTREE_PATH:-}" ]; then
++  env_assignments+=("APP_URL=$(nub exec portless get template)")
++fi
++
 diff --git a/solo.yml b/solo.yml
 --- a/solo.yml
 +++ b/solo.yml
@@ -1385,24 +1933,29 @@ diff --git a/tests/Pest.php b/tests/Pest.php
 -use function Pest\Laravel\freezeSecond;
 +use function Pest\Laravel\freezeSecond;
 +use function Pest\Laravel\withoutVite;
-@@ -8,1 +9,2 @@
--use App\Models\User;
+@@ -7,1 +8,2 @@
+-
++
 +use App\Enums\ToastVariant;
-+use App\Models\User;
-@@ -9,1 +11,2 @@
--use Illuminate\Contracts\Auth\Authenticatable;
-+use Illuminate\Contracts\Auth\Authenticatable;
+@@ -12,1 +14,3 @@
+-use Illuminate\Support\Facades\Event;
++use Illuminate\Support\Facades\Event;
++use Illuminate\Support\Facades\Vite;
 +use Illuminate\Testing\TestResponse;
-@@ -15,1 +18,2 @@
+@@ -18,1 +22,10 @@
 -        freezeSecond();
 +        freezeSecond();
++        Vite::useIntegrityKey(false);
++    })
++    ->in('Browser');
++
++pest()
++    ->extend(TestCase::class)
++    ->beforeEach(function (): void {
++        freezeSecond();
 +        withoutVite();
-@@ -17,1 +21,1 @@
--    ->in('Feature', 'Integration', 'Unit');
-+    ->in('Browser', 'Feature', 'Integration', 'Unit');
-@@ -33,1 +37,15 @@
--}
-+}
+@@ -73,1 +86,15 @@
+-
 +
 +TestResponse::macro('assertToast', function (
 +    string $title,
@@ -1417,6 +1970,7 @@ diff --git a/tests/Pest.php b/tests/Pest.php
 +        'variant' => $variant->value,
 +    ], static fn (null|int|string $value): bool => $value !== null));
 +});
++
 diff --git a/tests/Unit/Enums/FlashKeyTest.php b/tests/Unit/Enums/FlashKeyTest.php
 new file mode 100644
 --- /dev/null
@@ -1473,7 +2027,7 @@ diff --git a/tsconfig.app.json b/tsconfig.app.json
 new file mode 100644
 --- /dev/null
 +++ b/tsconfig.app.json
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,43 @@
 +{
 +  "compilerOptions": {
 +    "allowArbitraryExtensions": true,
@@ -1510,7 +2064,11 @@ new file mode 100644
 +    },
 +    "strictNullChecks": true
 +  },
-+  "exclude": ["resources/js/actions/Fruitcake"],
++  "exclude": [
++    "resources/js/actions/Filament",
++    "resources/js/actions/Fruitcake",
++    "resources/js/actions/Livewire"
++  ],
 +  "include": ["resources/js"]
 +}
 diff --git a/tsconfig.json b/tsconfig.json
@@ -1557,7 +2115,7 @@ diff --git a/vite.config.ts b/vite.config.ts
 new file mode 100644
 --- /dev/null
 +++ b/vite.config.ts
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,99 @@
 +import inertia from '@inertiajs/vite'
 +import {wayfinder} from '@laravel/vite-plugin-wayfinder'
 +import optimizeLocales from '@react-aria/optimize-locales-plugin'
@@ -1574,6 +2132,7 @@ new file mode 100644
 +
 +export default defineConfig(({mode}) => {
 +  const env = loadEnv(mode, process.cwd(), '')
++  const portlessUrl = process.env.PORTLESS_URL
 +
 +  return {
 +    build: {
@@ -1585,7 +2144,16 @@ new file mode 100644
 +        ssr: 'resources/js/app.tsx',
 +      }),
 +      laravel({
++        detectTls: false,
 +        fonts: [
++          google('Geist Mono', {
++            alias: 'mono',
++            display: 'swap',
++            fallbacks: ['ui-monospace', 'monospace'],
++            styles: ['normal'],
++            subsets: ['latin'],
++            weights: [400, 500, 600, 700, 800],
++          }),
 +          google('Inter', {
 +            alias: 'sans',
 +            display: 'swap',
@@ -1629,5 +2197,21 @@ new file mode 100644
 +        },
 +      }),
 +    ],
++    server: portlessUrl
++      ? {
++          cors: {
++            origin: env.APP_URL,
++          },
++          hmr: {
++            clientPort: 443,
++            host: new URL(portlessUrl).hostname,
++            protocol: 'wss',
++          },
++          host: process.env.HOST,
++          origin: portlessUrl,
++          port: Number(process.env.PORT),
++          strictPort: true,
++        }
++      : undefined,
 +  }
 +})

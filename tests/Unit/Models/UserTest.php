@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use HosmelQ\NameOfPerson\PersonName;
 use Illuminate\Support\Facades\Hash;
 
@@ -34,4 +35,32 @@ it('determines admin status based on config allowlist', function (): void {
 
     expect($admin->isAdmin())->toBeTrue()
         ->and($user->isAdmin())->toBeFalse();
+});
+
+it('allows only admins to access the admin panel', function (): void {
+    config(['admin.emails' => ['owner@example.com']]);
+
+    $panel = Filament::getPanel('admin');
+
+    expect(new User(['email' => 'owner@example.com'])->canAccessPanel($panel))->toBeTrue()
+        ->and(new User(['email' => 'user@example.com'])->canAccessPanel($panel))->toBeFalse();
+});
+
+it('normalizes email addresses when assigned', function (): void {
+    $user = new User();
+
+    $user->email = 'Mariela@Example.com';
+
+    expect($user->email)->toBe('mariela@example.com');
+});
+
+it('identifies itself in audit logs', function (): void {
+    $user = User::factory()->makeOne(['email' => 'owner@example.com', 'id' => 7]);
+
+    $identity = $user->auditLogIdentity();
+
+    expect($identity)
+        ->id->toBe('7')
+        ->name->toBe('owner@example.com')
+        ->type->toBe('user');
 });

@@ -1,15 +1,89 @@
-diff --git a/app/Http/Controllers/OrganizationController.php b/app/Http/Controllers/OrganizationController.php
+diff --git a/app/Http/Controllers/InvitationController.php b/app/Http/Controllers/InvitationController.php
 new file mode 100644
 --- /dev/null
-+++ b/app/Http/Controllers/OrganizationController.php
-@@ -0,0 +1,68 @@
++++ b/app/Http/Controllers/InvitationController.php
+@@ -0,0 +1,71 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Http\Controllers;
 +
-+use function App\__;
++use App\Actions\Invitations\AcceptInvitation;
++use App\Enums\MembershipPermission;
++use App\Models\Invitation;
++use App\Models\User;
++use Illuminate\Container\Attributes\CurrentUser;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Lang;
++use Illuminate\Support\Facades\Redirect;
++use Illuminate\Support\Facades\Route;
++use Inertia\Inertia;
++use Inertia\Response;
++
++class InvitationController
++{
++    public function show(string $token, #[CurrentUser] null|User $user): Response
++    {
++        $invitation = Invitation::query()
++            ->with(['invitedByUser', 'organization'])
++            ->where('token', hash('sha256', $token))
++            ->firstOrFail();
++
++        if (! $user instanceof User && $invitation->accepted_at === null && ! $invitation->isExpired()) {
++            Redirect::setIntendedUrl(route('invitations.show', ['token' => $token]));
++        }
++
++        return Inertia::render('invitations/Show', [
++            'invitation' => [
++                'accepted' => $invitation->accepted_at !== null,
++                'email' => $invitation->email,
++                'expired' => $invitation->isExpired(),
++                'invitedBy' => $invitation->invitedByUser->name->full(),
++                'organizationName' => $invitation->organization->name,
++                'roleLabel' => Lang::string($invitation->role->translationKey()),
++            ],
++            'loginUrl' => Route::has('login') ? route('login') : null,
++            'signedInEmail' => $user?->email,
++            'token' => $token,
++        ]);
++    }
++
++    public function store(
++        string $token,
++        #[CurrentUser] User $user,
++        AcceptInvitation $acceptInvitation,
++    ): RedirectResponse {
++        $invitation = DB::transaction(function () use ($acceptInvitation, $token, $user): Invitation {
++            $invitation = Invitation::query()
++                ->where('token', hash('sha256', $token))
++                ->lockForUpdate()
++                ->firstOrFail();
++
++            abort_if($invitation->accepted_at !== null || $invitation->isExpired(), 410);
++            abort_unless($user->email === $invitation->email, 403);
++
++            $acceptInvitation->handle($user, $invitation);
++
++            return $invitation;
++        });
++
++        return $user->can(MembershipPermission::SettingsView)
++            ? to_route('organizations.settings.general', ['organization' => $invitation->organization])
++            : to_route('home');
++    }
++}
+diff --git a/app/Http/Controllers/OrganizationController.php b/app/Http/Controllers/OrganizationController.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Controllers/OrganizationController.php
+@@ -0,0 +1,72 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Controllers;
 +
 +use App\Actions\Organizations\CreateOrganization;
 +use App\Actions\Organizations\Inputs\CreateOrganizationInput;
@@ -23,6 +97,7 @@ new file mode 100644
 +use Illuminate\Http\RedirectResponse;
 +use Illuminate\Routing\Controllers\HasMiddleware;
 +use Illuminate\Routing\Controllers\Middleware;
++use Illuminate\Support\Facades\Lang;
 +use Inertia\Inertia;
 +use Inertia\Response;
 +
@@ -31,10 +106,15 @@ new file mode 100644
 +    public static function middleware(): array
 +    {
 +        return [
-+            new Middleware('can:create,'.Organization::class, only: ['store']),
++            new Middleware('can:create,'.Organization::class, only: ['create', 'store']),
 +            new Middleware('can:update,organization', only: ['update']),
 +            new Middleware('can:view,organization', only: ['show']),
 +        ];
++    }
++
++    public function create(): Response
++    {
++        return Inertia::render('organization/Create');
 +    }
 +
 +    public function show(Organization $organization): Response
@@ -55,7 +135,7 @@ new file mode 100644
 +        );
 +
 +        return to_route('organizations.settings.general', ['organization' => $organization])
-+            ->toast(__('organization.created.title'));
++            ->toast(Lang::string('organization.created.title'));
 +    }
 +
 +    public function update(
@@ -68,19 +148,28 @@ new file mode 100644
 +            UpdateOrganizationInput::from($request->validated()),
 +        );
 +
-+        return back()->toast(__('organization.updated.title'));
++        return back()->toast(Lang::string('organization.updated.title'));
 +    }
 +}
 diff --git a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/HandleInertiaRequests.php
 --- a/app/Http/Middleware/HandleInertiaRequests.php
 +++ b/app/Http/Middleware/HandleInertiaRequests.php
-@@ -27,1 +27,1 @@
+@@ -7,1 +7,2 @@
+-use App\Enums\Locale;
++use App\Enums\Locale;
++use App\Enums\MembershipPermission;
+@@ -27,1 +28,1 @@
 -     * @return array{user: null|JsonResource}
-+     * @return array{organization: null|JsonResource, user: null|JsonResource}
-@@ -34,1 +34,2 @@
--            'user' => $user?->toResource(),
++     * @return array{organization: null|JsonResource, permissions: list<string>, user: null|JsonResource}
+@@ -33,1 +34,7 @@
+-        return [
++        return [
 +            'organization' => $user?->currentOrganization?->toResource(),
-+            'user' => $user?->toResource(),
++            'permissions' => $user?->currentOrganization === null ? [] : array_values(collect(MembershipPermission::cases())
++                ->filter(fn (MembershipPermission $permission): bool => $user->can($permission))
++                ->map(fn (MembershipPermission $permission): string => $permission->value)
++                ->sort()
++                ->all()),
 diff --git a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResource.php
 --- a/app/Http/Resources/UserResource.php
 +++ b/app/Http/Resources/UserResource.php
@@ -96,16 +185,277 @@ diff --git a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResour
 +                fn (): OrganizationResource => OrganizationResource::make($currentOrganization),
 +                null,
 +            ),
+diff --git a/resources/js/layouts/Organization.tsx b/resources/js/layouts/Organization.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/layouts/Organization.tsx
+@@ -0,0 +1,134 @@
++import {faGear} from '@fortawesome/pro-regular-svg-icons'
++import {FontAwesomeIcon} from '@fortawesome/react-fontawesome'
++import {AppLayout, Navbar, Sidebar} from '@heroui-pro/react'
++import {Avatar, Button, Description, Dropdown, Label, Typography} from '@heroui/react'
++import {usePage} from '@inertiajs/react'
++import type {ReactNode} from 'react'
++
++import {show} from '#/actions/App/Http/Controllers/OrganizationController'
++
++interface OrganizationProps {
++  children: ReactNode
++}
++
++function OrganizationSidebar() {
++  const {props, url} = usePage()
++  const {organization, permissions, user} = props.auth
++
++  if (!organization || !user) {
++    return null
++  }
++
++  const canViewSettings = permissions.includes('settings.view')
++  const settingsUrl = show.url(organization.slug)
++  const content = (
++    <>
++      <Sidebar.Header>
++        <div className="flex items-center gap-3">
++          <Avatar color="accent" size="sm">
++            <Avatar.Fallback>{organization.name.charAt(0).toUpperCase()}</Avatar.Fallback>
++          </Avatar>
++          <Typography data-sidebar="label" truncate type="body-sm" weight="semibold">
++            {organization.name}
++          </Typography>
++        </div>
++      </Sidebar.Header>
++      <Sidebar.Content>
++        {canViewSettings && (
++          <Sidebar.Group>
++            <Sidebar.Menu aria-label="Organization">
++              <Sidebar.MenuItem
++                href={settingsUrl}
++                id="settings"
++                isCurrent={url.split('?')[0] === settingsUrl}
++                textValue="Settings"
++              >
++                <Sidebar.MenuIcon>
++                  <FontAwesomeIcon icon={faGear} />
++                </Sidebar.MenuIcon>
++                <Sidebar.MenuLabel>Settings</Sidebar.MenuLabel>
++              </Sidebar.MenuItem>
++            </Sidebar.Menu>
++          </Sidebar.Group>
++        )}
++      </Sidebar.Content>
++      <Sidebar.Footer>
++        <Dropdown>
++          <Button
++            fullWidth
++            aria-label={`Account menu for ${user.name}`}
++            className="justify-start"
++            variant="ghost"
++          >
++            <Avatar size="sm">
++              <Avatar.Image alt={user.name} src={user.avatar_url} />
++              <Avatar.Fallback>{user.name.charAt(0).toUpperCase()}</Avatar.Fallback>
++            </Avatar>
++            <div className="min-w-0 text-left" data-sidebar="label">
++              <Typography truncate type="body-sm" weight="medium">
++                {user.name}
++              </Typography>
++              <Typography color="muted" truncate type="body-xs">
++                {user.email}
++              </Typography>
++            </div>
++          </Button>
++          <Dropdown.Popover placement="top start">
++            <Dropdown.Menu aria-label="Account">
++              <Dropdown.Section>
++                <Dropdown.Item id="account" isDisabled textValue={user.email}>
++                  <Label>{user.name}</Label>
++                  <Description>{user.email}</Description>
++                </Dropdown.Item>
++                {canViewSettings && (
++                  <Dropdown.Item href={settingsUrl} id="settings" textValue="Settings">
++                    <FontAwesomeIcon icon={faGear} />
++                    <Label>Settings</Label>
++                  </Dropdown.Item>
++                )}
++              </Dropdown.Section>
++            </Dropdown.Menu>
++          </Dropdown.Popover>
++        </Dropdown>
++      </Sidebar.Footer>
++    </>
++  )
++
++  return (
++    <>
++      <Sidebar>
++        {content}
++        <Sidebar.Rail />
++      </Sidebar>
++      <Sidebar.Mobile>{content}</Sidebar.Mobile>
++    </>
++  )
++}
++
++export function Organization({children}: OrganizationProps) {
++  const {organization, user} = usePage().props.auth
++
++  if (!organization || !user) {
++    return children
++  }
++
++  return (
++    <AppLayout
++      navbar={
++        <Navbar maxWidth="full">
++          <Navbar.Header>
++            <AppLayout.MenuToggle />
++            <Sidebar.Trigger />
++            <Typography type="body-sm" weight="semibold">
++              {organization.name}
++            </Typography>
++            <Navbar.Spacer />
++          </Navbar.Header>
++        </Navbar>
++      }
++      sidebar={<OrganizationSidebar />}
++    >
++      {children}
++    </AppLayout>
++  )
++}
+diff --git a/resources/js/layouts/index.ts b/resources/js/layouts/index.ts
+--- a/resources/js/layouts/index.ts
++++ b/resources/js/layouts/index.ts
+@@ -4,1 +4,2 @@
+-import {Modal} from './Modal'
++import {Modal} from './Modal'
++import {Organization} from './Organization'
+@@ -9,1 +10,3 @@
+-  '': [Modal, App],
++  '': [Modal, App],
++  'organization/': [Modal, App, Organization],
++  'organization/Create': [Modal, App],
+diff --git a/resources/js/pages/invitations/Show.tsx b/resources/js/pages/invitations/Show.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/invitations/Show.tsx
+@@ -0,0 +1,62 @@
++import {Button, Card, Link} from '@heroui/react'
++import {Head} from '@inertiajs/react'
++
++import {store} from '#/actions/App/Http/Controllers/InvitationController'
++import {Form} from '#/components/Form'
++
++interface ShowProps {
++  invitation: {
++    accepted: boolean
++    email: string
++    expired: boolean
++    invitedBy: string
++    organizationName: string
++    roleLabel: string
++  }
++  loginUrl: null | string
++  signedInEmail: null | string
++  token: string
++}
++
++export default function Show({invitation, loginUrl, signedInEmail, token}: ShowProps) {
++  return (
++    <>
++      <Head title="Organization invitation" />
++      <div className="m-auto w-full max-w-md p-4">
++        <Card>
++          <Card.Header>
++            <Card.Title>Join {invitation.organizationName}</Card.Title>
++          </Card.Header>
++          <Card.Content className="flex flex-col gap-4">
++            <p>
++              {invitation.invitedBy} invited you to join as {invitation.roleLabel}.
++            </p>
++            {invitation.accepted ? (
++              <p>This invitation has already been accepted.</p>
++            ) : invitation.expired ? (
++              <p>This invitation has expired. Ask for a new invitation.</p>
++            ) : signedInEmail === null ? (
++              <>
++                <p>Sign in with {invitation.email} to accept this invitation.</p>
++                {loginUrl && <Link href={loginUrl}>Sign in</Link>}
++              </>
++            ) : signedInEmail !== invitation.email ? (
++              <p>
++                You are signed in as {signedInEmail}. Sign in with {invitation.email} to accept this
++                invitation.
++              </p>
++            ) : (
++              <Form action={store(token)}>
++                {({processing}) => (
++                  <Button isPending={processing} type="submit">
++                    Accept invitation
++                  </Button>
++                )}
++              </Form>
++            )}
++          </Card.Content>
++        </Card>
++      </div>
++    </>
++  )
++}
+diff --git a/resources/js/pages/organization/Create.tsx b/resources/js/pages/organization/Create.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/organization/Create.tsx
+@@ -0,0 +1,36 @@
++import {Button, Card, FieldError, Input, Label, TextField} from '@heroui/react'
++import {Head} from '@inertiajs/react'
++
++import {store} from '#/actions/App/Http/Controllers/OrganizationController'
++import {Form} from '#/components/Form'
++
++export default function Create() {
++  return (
++    <>
++      <Head title="Create organization" />
++      <div className="m-auto w-full max-w-md p-4">
++        <Card>
++          <Card.Header>
++            <Card.Title>Create organization</Card.Title>
++          </Card.Header>
++          <Card.Content>
++            <Form action={store()} className="flex flex-col gap-4">
++              {({processing}) => (
++                <>
++                  <TextField isRequired name="name">
++                    <Label>Name</Label>
++                    <Input autoComplete="organization" maxLength={255} />
++                    <FieldError />
++                  </TextField>
++                  <Button isPending={processing} type="submit">
++                    Create organization
++                  </Button>
++                </>
++              )}
++            </Form>
++          </Card.Content>
++        </Card>
++      </div>
++    </>
++  )
++}
 diff --git a/resources/js/pages/organization/Settings.tsx b/resources/js/pages/organization/Settings.tsx
 new file mode 100644
 --- /dev/null
 +++ b/resources/js/pages/organization/Settings.tsx
-@@ -0,0 +1,34 @@
-+import {Button, FieldError, Input, Label, TextField} from '@heroui/react'
-+import {Head} from '@inertiajs/react'
+@@ -0,0 +1,63 @@
++import {Card, FieldError, Input, Label, TextField} from '@heroui/react'
++import {Head, usePage} from '@inertiajs/react'
 +
 +import {update} from '#/actions/App/Http/Controllers/OrganizationController'
 +import {Form} from '#/components/Form'
++import {Body, Header, HeaderContent, Main, Page, Title} from '#/components/Layout'
++import {UnsavedChangesBar} from '#/components/UnsavedChangesBar'
 +import type {OrganizationResource} from '#/types/laravel'
 +
 +interface SettingsProps {
@@ -113,38 +463,68 @@ new file mode 100644
 +}
 +
 +export default function Settings({organization}: SettingsProps) {
++  const canUpdate = usePage().props.auth.permissions.includes('settings.organization')
++
 +  return (
 +    <>
 +      <Head title="Organization settings" />
-+      <div className="mx-auto max-w-sm">
-+        <Form action={update(organization.slug)} className="flex flex-col gap-y-4">
-+          {({processing}) => (
-+            <>
-+              <TextField defaultValue={organization.name} isRequired name="name">
-+                <Label>Name</Label>
-+                <Input autoComplete="organization" />
-+                <FieldError />
-+              </TextField>
-+              <Button isPending={processing} type="submit">
-+                Save
-+              </Button>
-+            </>
-+          )}
-+        </Form>
-+      </div>
++      <Page>
++        <Header>
++          <HeaderContent>
++            <Title>Organization settings</Title>
++          </HeaderContent>
++        </Header>
++        <Body>
++          <Main>
++            <Form action={update(organization.slug)} setDefaultsOnSuccess>
++              {({isDirty, processing, resetAndClearErrors}) => (
++                <>
++                  <Card>
++                    <Card.Header>
++                      <Card.Title>General</Card.Title>
++                    </Card.Header>
++                    <Card.Content>
++                      <TextField
++                        defaultValue={organization.name}
++                        isReadOnly={!canUpdate}
++                        isRequired
++                        name="name"
++                      >
++                        <Label>Name</Label>
++                        <Input autoComplete="organization" maxLength={255} />
++                        <FieldError />
++                      </TextField>
++                    </Card.Content>
++                  </Card>
++                  {canUpdate && (
++                    <UnsavedChangesBar
++                      isDirty={isDirty}
++                      isPending={processing}
++                      onDiscard={resetAndClearErrors}
++                    />
++                  )}
++                </>
++              )}
++            </Form>
++          </Main>
++        </Body>
++      </Page>
 +    </>
 +  )
 +}
 diff --git a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
 --- a/resources/js/types/global.d.ts
 +++ b/resources/js/types/global.d.ts
-@@ -4,1 +4,1 @@
+@@ -3,2 +3,2 @@
+-import type {ToastVariant} from '#/types/generated/enums'
 -import type {UserResource} from '#/types/laravel'
++import type {MembershipPermission, ToastVariant} from '#/types/generated/enums'
 +import type {OrganizationResource, UserResource} from '#/types/laravel'
-@@ -17,1 +17,2 @@
+@@ -17,1 +17,3 @@
 -      auth: {
 +      auth: {
 +        organization: null | OrganizationResource
++        permissions: MembershipPermission[]
 diff --git a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
 --- a/resources/js/types/laravel.ts
 +++ b/resources/js/types/laravel.ts
@@ -163,228 +543,345 @@ diff --git a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
 diff --git a/routes/web.php b/routes/web.php
 --- a/routes/web.php
 +++ b/routes/web.php
-@@ -5,1 +5,2 @@
+@@ -5,1 +5,3 @@
 -use Illuminate\Support\Facades\Route;
++use App\Http\Controllers\InvitationController;
 +use App\Http\Controllers\OrganizationController;
 +use Illuminate\Support\Facades\Route;
-@@ -19,1 +20,6 @@
+@@ -13,1 +15,3 @@
+-})->name('home');
++})->name('home');
++
++Route::get('invitations/{token}', [InvitationController::class, 'show'])->name('invitations.show');
+@@ -18,1 +22,3 @@
+-Route::middleware('auth')->group(function (): void {
++Route::middleware('auth')->group(function (): void {
++    Route::post('invitations/{token}/accept', [InvitationController::class, 'store'])->name('invitations.accept');
++
+@@ -19,1 +25,6 @@
 -    Route::middleware('verified')->scopeBindings()->group(function (): void {
 +    Route::middleware('verified')->scopeBindings()->group(function (): void {
 +        Route::get('organizations/{organization}/settings/general', [OrganizationController::class, 'show'])
 +            ->name('organizations.settings.general');
 +
 +        Route::resource('organizations', OrganizationController::class)
-+            ->only(['store', 'update']);
++            ->only(['create', 'store', 'update']);
+diff --git a/tests/Feature/Http/Controllers/InvitationControllerTest.php b/tests/Feature/Http/Controllers/InvitationControllerTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/Controllers/InvitationControllerTest.php
+@@ -0,0 +1,148 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertDatabaseCount;
++use function Pest\Laravel\assertDatabaseMissing;
++use function Pest\Laravel\get;
++use function Pest\Laravel\post;
++use function Pest\Laravel\postJson;
++
++use App\Enums\MembershipRole;
++use App\Models\Invitation;
++use App\Models\Organization;
++use Illuminate\Support\Facades\Route;
++use Inertia\Testing\AssertableInertia;
++
++describe('show', function (): void {
++    it('rejects an unknown token', function (): void {
++        get(route('invitations.show', 'missing'))->assertNotFound();
++    });
++
++    it('shows a guest the invitation without requiring authentication routes', function (): void {
++        $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++        get(route('invitations.show', 'invitation-token'))
++            ->assertOk()
++            ->assertSessionHas('url.intended', route('invitations.show', 'invitation-token'))
++            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++                ->component('invitations/Show')
++                ->where('invitation.accepted', false)
++                ->where('invitation.expired', false)
++                ->where('invitation.invitedBy', $invitation->invitedByUser->name->full())
++                ->where('invitation.organizationName', $invitation->organization->name)
++                ->where('invitation.roleLabel', 'Viewer')
++                ->where('loginUrl', null)
++                ->where('signedInEmail', null));
++    });
++
++    it('provides a sign-in link when the optional route exists', function (): void {
++        Invitation::factory()->withToken('invitation-token')->createOne();
++        Route::getRoutes()->add(Route::get('sign-in', fn (): string => 'Sign in')->name('login'));
++
++        get(route('invitations.show', 'invitation-token'))
++            ->assertOk()
++            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++                ->where('loginUrl', route('login')));
++    });
++
++    it('shows expired and accepted states', function (string $state): void {
++        Invitation::factory()->withToken('invitation-token')->{$state}()->createOne();
++
++        get(route('invitations.show', 'invitation-token'))
++            ->assertOk()
++            ->assertSessionMissing('url.intended')
++            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++                ->where('invitation.'.$state, true));
++    })->with(['accepted', 'expired']);
++
++    it('shows the signed-in email without accepting an invitation for another account', function (): void {
++        $user = login();
++        $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++        get(route('invitations.show', 'invitation-token'))
++            ->assertOk()
++            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++                ->where('signedInEmail', $user->email));
++
++        expect($invitation->fresh()->accepted_at)->toBeNull();
++    });
++
++    it('does not accept the matching account through a GET request', function (): void {
++        $user = login();
++        $invitation = Invitation::factory()->withToken('invitation-token')->createOne(['email' => $user->email]);
++
++        get(route('invitations.show', 'invitation-token'))->assertOk();
++
++        expect($invitation->fresh()->accepted_at)->toBeNull();
++        assertDatabaseMissing('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++    });
++});
++
++describe('accept', function (): void {
++    it('requires authentication', function (): void {
++        postJson(route('invitations.accept', 'invitation-token'))->assertUnauthorized();
++    });
++
++    it('rejects an unknown token', function (): void {
++        login();
++
++        post(route('invitations.accept', 'missing'))->assertNotFound();
++    });
++
++    it('rejects expired or accepted invitations', function (string $state): void {
++        $user = login();
++        $invitation = Invitation::factory()->withToken('invitation-token')->{$state}()->createOne(['email' => $user->email]);
++
++        post(route('invitations.accept', 'invitation-token'))->assertGone();
++
++        assertDatabaseMissing('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++        expect($user->fresh()->current_organization_id)->toBeNull();
++    })->with(['accepted', 'expired']);
++
++    it('rejects a different signed-in email', function (): void {
++        $user = login();
++        $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++        post(route('invitations.accept', 'invitation-token'))->assertForbidden();
++
++        expect($invitation->fresh()->accepted_at)->toBeNull();
++        assertDatabaseMissing('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++    });
++
++    it('accepts the invitation and switches the active organization', function (MembershipRole $role, string $route): void {
++        $originalOrganization = Organization::factory()->createOne();
++        $user = login(organization: $originalOrganization);
++        $user->switchOrganization($originalOrganization);
++        $user->assignRole(MembershipRole::Viewer);
++        $user->load(['organizations', 'permissions', 'roles']);
++
++        $invitation = Invitation::factory()->withToken('invitation-token')->createOne(['email' => $user->email, 'role' => $role]);
++
++        post(route('invitations.accept', 'invitation-token'))
++            ->assertRedirectToRoute($route, $route === 'home' ? [] : ['organization' => $invitation->organization]);
++
++        $user->refresh();
++        expect($user)->current_organization_id->toBe($invitation->organization_id)
++            ->and($invitation->fresh()->accepted_at)->toEqual(now());
++        $user->switchOrganization($invitation->organization);
++        expect($user->hasRole($role))->toBeTrue();
++        $user->switchOrganization($originalOrganization);
++        expect($user->hasRole(MembershipRole::Viewer))->toBeTrue();
++    })->with([
++        'admin' => [MembershipRole::Admin, 'organizations.settings.general'],
++        'owner' => [MembershipRole::Owner, 'organizations.settings.general'],
++        'viewer' => [MembershipRole::Viewer, 'home'],
++    ]);
++
++    it('cannot replay a successful acceptance', function (): void {
++        $user = login();
++        Invitation::factory()->withToken('invitation-token')->createOne(['email' => $user->email]);
++
++        post(route('invitations.accept', 'invitation-token'))->assertRedirectToRoute('home');
++        post(route('invitations.accept', 'invitation-token'))->assertGone();
++
++        assertDatabaseCount('organization_user', 1);
++        assertDatabaseCount('model_has_roles', 1);
++    });
++});
 diff --git a/tests/Feature/Http/Controllers/OrganizationControllerTest.php b/tests/Feature/Http/Controllers/OrganizationControllerTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/Controllers/OrganizationControllerTest.php
-@@ -0,0 +1,346 @@
+@@ -0,0 +1,233 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +use function Pest\Laravel\get;
 +use function Pest\Laravel\getJson;
-+use function Pest\Laravel\mock;
 +use function Pest\Laravel\patch;
 +use function Pest\Laravel\patchJson;
 +use function Pest\Laravel\post;
 +use function Pest\Laravel\postJson;
 +
-+use App\Actions\Organizations\CreateOrganization;
-+use App\Actions\Organizations\Inputs\CreateOrganizationInput;
-+use App\Actions\Organizations\Inputs\UpdateOrganizationInput;
-+use App\Actions\Organizations\UpdateOrganization;
-+use App\Enums\Permission;
++use App\Enums\MembershipPermission;
++use App\Enums\MembershipRole;
 +use App\Models\Organization;
-+use App\Models\User;
 +use Illuminate\Support\Str;
 +use Inertia\Testing\AssertableInertia;
++
++describe('create', function (): void {
++    it('requires authentication', function (): void {
++        getJson(route('organizations.create'))->assertUnauthorized();
++    });
++
++    it('shows the organization creation page without a current organization', function (): void {
++        login();
++
++        get(route('organizations.create'))
++            ->assertOk()
++            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++                ->component('organization/Create')
++                ->where('auth.organization', null)
++                ->where('auth.permissions', []));
++    });
++});
 +
 +describe('show', function (): void {
 +    it('requires authentication', function (): void {
 +        $organization = Organization::factory()->createOne();
 +
-+        $response = getJson(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertUnauthorized();
++        getJson(route('organizations.settings.general', $organization))->assertUnauthorized();
 +    });
 +
 +    it('prevents viewing from an unrelated organization', function (): void {
-+        $unrelatedOrganization = Organization::factory()->createOne();
-+
++        $organization = Organization::factory()->createOne();
 +        login(organization: Organization::factory()->createOne());
 +
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $unrelatedOrganization,
-+        ]));
-+
-+        $response->assertForbidden();
++        get(route('organizations.settings.general', $organization))->assertForbidden();
 +    });
 +
 +    it('prevents viewing without permission', function (): void {
 +        $organization = Organization::factory()->createOne();
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->assignRole(MembershipRole::Viewer);
 +
-+        login(organization: $organization);
-+
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
++        get(route('organizations.settings.general', $organization))->assertForbidden();
 +    });
 +
-+    it('prevents viewing with the settings update permission', function (): void {
++    it('does not allow the update permission to grant settings access', function (): void {
 +        $organization = Organization::factory()->createOne();
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->givePermissionTo(MembershipPermission::SettingsOrganization);
 +
-+        loginWithPermission(Permission::OrganizationsUpdateSettings, $organization);
-+
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
++        get(route('organizations.settings.general', $organization))->assertForbidden();
 +    });
 +
-+    it('prevents viewing when permission assignment remains without membership', function (): void {
++    it('does not use a role from another organization', function (): void {
 +        $organization = Organization::factory()->createOne();
-+        $user = loginWithPermission(Permission::OrganizationsView, $organization);
++        $otherOrganization = Organization::factory()->createOne();
++        $user = login(organization: $otherOrganization);
++        $user->switchOrganization($otherOrganization);
++        $user->assignRole(MembershipRole::Admin);
++        $user->organizations()->attach($organization);
++        $user->unsetRelation('organizations');
++        $user->switchOrganization($organization);
++        $user->assignRole(MembershipRole::Viewer);
 +
-+        $user->organizations()->detach($organization);
-+
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
++        get(route('organizations.settings.general', $organization))->assertForbidden();
 +    });
 +
-+    it('does not use organization view permission from another organization', function (): void {
++    it('rejects an inactive organization even when its membership has permission', function (): void {
 +        $organization = Organization::factory()->createOne();
-+        $user = loginWithPermission(Permission::OrganizationsView, Organization::factory()->createOne());
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->assignRole(MembershipRole::Admin);
 +
-+        $user->organizations()->syncWithoutDetaching($organization);
++        $otherOrganization = Organization::factory()->createOne();
++        $user->organizations()->attach($otherOrganization);
++        $user->unsetRelation('organizations');
++        $user->switchOrganization($otherOrganization);
 +
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
++        get(route('organizations.settings.general', $organization))->assertForbidden();
 +    });
 +
-+    it('prevents an owner without membership from viewing organization settings', function (): void {
++    it('shows settings for authorized roles', function (MembershipRole $role): void {
 +        $organization = Organization::factory()->createOne();
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->assignRole($role);
 +
-+        login($organization->owner);
++        get(route('organizations.settings.general', $organization))
++            ->assertOk()
++            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++                ->component('organization/Settings')
++                ->where('organization.id', $organization->sqid)
++                ->where('organization.name', $organization->name)
++                ->where('organization.slug', $organization->slug)
++                ->where('auth.organization.id', $organization->sqid)
++                ->where('auth.permissions', MembershipPermission::values()));
++    })->with([
++        'admin' => MembershipRole::Admin,
++        'owner' => MembershipRole::Owner,
++    ]);
 +
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
-+    });
-+
-+    it('allows a member owner to view organization settings', function (): void {
++    it('allows settings viewing without update permission', function (): void {
 +        $organization = Organization::factory()->createOne();
-+        $organization->users()->attach($organization->owner);
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->givePermissionTo(MembershipPermission::SettingsView);
 +
-+        login($organization->owner);
-+
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertOk();
-+    });
-+
-+    it('uses the route organization instead of the current organization for permission context', function (): void {
-+        $organization = Organization::factory()->createOne();
-+        $user = User::factory()->withOrganization(Organization::factory()->createOne())->createOne();
-+
-+        loginWithPermission(Permission::OrganizationsView, $organization, $user);
-+
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertOk()
-+            ->assertInertia(function (AssertableInertia $page) use ($organization): void {
-+                $page->where('organization.id', $organization->sqid);
-+            });
-+    });
-+
-+    it('shows the organization settings page', function (): void {
-+        $organization = Organization::factory()->createOne();
-+
-+        loginWithPermission(Permission::OrganizationsView, $organization);
-+
-+        $response = get(route('organizations.settings.general', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertOk()
-+            ->assertInertia(function (AssertableInertia $page) use ($organization): void {
-+                $page->component('organization/Settings')
-+                    ->where('organization.id', $organization->sqid)
-+                    ->where('organization.name', $organization->name);
-+            });
++        get(route('organizations.settings.general', $organization))
++            ->assertOk()
++            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++                ->where('auth.permissions', [MembershipPermission::SettingsView->value]));
 +    });
 +});
 +
 +describe('store', function (): void {
 +    it('requires authentication', function (): void {
-+        $response = postJson(route('organizations.store'));
-+
-+        $response->assertUnauthorized();
++        postJson(route('organizations.store'))->assertUnauthorized();
 +    });
 +
-+    it('validates fields', function (array $data, array $expected): void {
++    it('validates fields', function (array $data): void {
 +        login();
 +
-+        $response = post(route('organizations.store'), $data);
-+
-+        $response->assertRedirectBackWithErrors($expected);
++        postJson(route('organizations.store'), $data)->assertUnprocessable()->assertJsonValidationErrors('name');
 +    })->with([
-+        'max:255 (string)' => [
-+            'data' => [
-+                'name' => Str::repeat('a', 256),
-+            ],
-+            'expected' => [
-+                'name' => 'The name field must not be greater than 255 characters.',
-+            ],
-+        ],
-+        'required' => [
-+            'data' => [],
-+            'expected' => [
-+                'name' => 'The name field is required.',
-+            ],
-+        ],
++        'max:255' => [['name' => Str::repeat('a', 256)]],
++        'required' => [[]],
++        'string' => [['name' => ['Acme']]],
 +    ]);
 +
-+    it('creates an organization', function (): void {
++    it('creates an organization and switches to it as owner', function (): void {
 +        $user = login();
-+        $organization = Organization::factory()->createOne();
 +
-+        mock(CreateOrganization::class)
-+            ->shouldReceive('handle')
-+            ->once()
-+            ->withArgs(
-+                fn (User $actualUser, CreateOrganizationInput $input): bool => $actualUser->is($user)
-+                    && $input->name === 'My Organization',
-+            )
-+            ->andReturn($organization);
++        $response = post(route('organizations.store'), ['name' => 'Acme']);
++        $organization = Organization::query()->sole();
++        $user->refresh();
++        expect($user->current_organization_id)->toBe($organization->id);
++        $user->switchOrganization($organization);
 +
-+        $response = post(route('organizations.store'), [
-+            'name' => 'My Organization',
-+        ]);
-+
-+        $response->assertRedirectToRoute('organizations.settings.general', [
-+            'organization' => $organization,
-+        ])
++        $response->assertRedirectToRoute('organizations.settings.general', $organization)
 +            ->assertToast('Organization created');
++
++        expect($organization)->name->toBe('Acme')->owner_id->toBe($user->id)
++            ->and($user)->current_organization_id->toBe($organization->id)
++            ->belongsToOrganization($organization)->toBeTrue()
++            ->hasRole(MembershipRole::Owner)->toBeTrue();
 +    });
 +});
 +
@@ -392,180 +889,190 @@ new file mode 100644
 +    it('requires authentication', function (): void {
 +        $organization = Organization::factory()->createOne();
 +
-+        $response = patchJson(route('organizations.update', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertUnauthorized();
++        patchJson(route('organizations.update', $organization))->assertUnauthorized();
 +    });
 +
 +    it('prevents updating from an unrelated organization', function (): void {
-+        $unrelatedOrganization = Organization::factory()->createOne();
-+
++        $organization = Organization::factory()->createOne();
 +        login(organization: Organization::factory()->createOne());
 +
-+        $response = patch(route('organizations.update', [
-+            'organization' => $unrelatedOrganization,
-+        ]));
++        patch(route('organizations.update', $organization), ['name' => 'Changed'])->assertForbidden();
 +
-+        $response->assertForbidden();
++        expect($organization->fresh()->name)->toBe($organization->name);
 +    });
 +
-+    it('prevents updating without permission', function (): void {
++    it('prevents updating without update permission', function (): void {
 +        $organization = Organization::factory()->createOne();
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->assignRole(MembershipRole::Viewer);
++        $user->givePermissionTo(MembershipPermission::SettingsView);
 +
-+        login(organization: $organization);
++        patch(route('organizations.update', $organization), ['name' => 'Changed'])->assertForbidden();
 +
-+        $response = patch(route('organizations.update', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
++        expect($organization->fresh()->name)->toBe($organization->name);
 +    });
 +
-+    it('prevents updating with the organization view permission', function (): void {
++    it('does not use update permission from another organization', function (): void {
 +        $organization = Organization::factory()->createOne();
++        $otherOrganization = Organization::factory()->createOne();
++        $user = login(organization: $otherOrganization);
++        $user->switchOrganization($otherOrganization);
++        $user->assignRole(MembershipRole::Admin);
++        $user->organizations()->attach($organization);
++        $user->unsetRelation('organizations');
++        $user->switchOrganization($organization);
 +
-+        loginWithPermission(Permission::OrganizationsView, $organization);
++        patch(route('organizations.update', $organization), ['name' => 'Changed'])->assertForbidden();
 +
-+        $response = patch(route('organizations.update', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
++        expect($organization->fresh()->name)->toBe($organization->name);
 +    });
 +
-+    it('does not use settings update permission from another organization', function (): void {
++    it('validates fields', function (array $data): void {
 +        $organization = Organization::factory()->createOne();
-+        $user = loginWithPermission(Permission::OrganizationsUpdateSettings, Organization::factory()->createOne());
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->assignRole(MembershipRole::Admin);
 +
-+        $user->organizations()->syncWithoutDetaching($organization);
-+
-+        $response = patch(route('organizations.update', [
-+            'organization' => $organization,
-+        ]));
-+
-+        $response->assertForbidden();
-+    });
-+
-+    it('validates fields', function (array $data, array $expected): void {
-+        $organization = Organization::factory()->createOne();
-+
-+        loginWithPermission(Permission::OrganizationsUpdateSettings, $organization);
-+
-+        $response = patch(route('organizations.update', [
-+            'organization' => $organization,
-+        ]), $data);
-+
-+        $response->assertRedirectBackWithErrors($expected);
++        patchJson(route('organizations.update', $organization), $data)->assertUnprocessable()->assertJsonValidationErrors('name');
 +    })->with([
-+        'max:255 (string)' => [
-+            'data' => [
-+                'name' => Str::repeat('a', 256),
-+            ],
-+            'expected' => [
-+                'name' => 'The name field must not be greater than 255 characters.',
-+            ],
-+        ],
-+        'sometimes (required)' => [
-+            'data' => [
-+                'name' => '',
-+            ],
-+            'expected' => [
-+                'name' => 'The name field is required.',
-+            ],
-+        ],
++        'max:255' => [['name' => Str::repeat('a', 256)]],
++        'required' => [['name' => '']],
++        'string' => [['name' => ['Acme']]],
 +    ]);
 +
-+    it('allows a member owner to update organization settings', function (): void {
++    it('updates organization settings for authorized roles', function (MembershipRole $role): void {
 +        $organization = Organization::factory()->createOne();
-+        $organization->users()->attach($organization->owner);
++        $user = login(organization: $organization);
++        $user->switchOrganization($organization);
++        $user->assignRole($role);
 +
-+        mock(UpdateOrganization::class)
-+            ->shouldReceive('handle')
-+            ->once()
-+            ->withArgs(
-+                fn (Organization $actualOrganization, UpdateOrganizationInput $input): bool => $actualOrganization->is($organization)
-+                    && $input->name === 'Updated Organization',
-+            );
-+
-+        login($organization->owner);
-+
-+        $response = patch(route('organizations.update', [
-+            'organization' => $organization,
-+        ]), [
-+            'name' => 'Updated Organization',
-+        ]);
-+
-+        $response->assertRedirectBack()
++        patch(route('organizations.update', $organization), ['name' => 'Acme'])
++            ->assertRedirectBack()
 +            ->assertToast('Settings updated');
-+    });
 +
-+    it('updates organization settings', function (): void {
-+        $organization = Organization::factory()->createOne([
-+            'name' => 'My Organization',
-+        ]);
-+
-+        mock(UpdateOrganization::class)
-+            ->shouldReceive('handle')
-+            ->once()
-+            ->withArgs(
-+                fn (Organization $actualOrganization, UpdateOrganizationInput $input): bool => $actualOrganization->is($organization)
-+                    && $input->name === 'Updated Organization',
-+            );
-+
-+        loginWithPermission(Permission::OrganizationsUpdateSettings, $organization);
-+
-+        $response = patch(route('organizations.update', [
-+            'organization' => $organization,
-+        ]), [
-+            'name' => 'Updated Organization',
-+        ]);
-+
-+        $response->assertRedirectBack()
-+            ->assertToast('Settings updated');
-+    });
++        expect($organization->fresh()->name)->toBe('Acme');
++    })->with([
++        'admin' => MembershipRole::Admin,
++        'owner' => MembershipRole::Owner,
++    ]);
 +});
 diff --git a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php b/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php
 --- a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php
 +++ b/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php
-@@ -5,1 +5,2 @@
+@@ -4,1 +4,5 @@
+-
++
++use function Pest\Laravel\get;
++
++use App\Enums\MembershipPermission;
++use App\Enums\MembershipRole;
+@@ -5,1 +9,2 @@
 -use App\Http\Middleware\HandleInertiaRequests;
 +use App\Http\Middleware\HandleInertiaRequests;
 +use App\Http\Resources\OrganizationResource;
-@@ -6,1 +7,2 @@
+@@ -6,1 +11,2 @@
 -use App\Http\Resources\UserResource;
 +use App\Http\Resources\UserResource;
 +use App\Models\Organization;
-@@ -29,1 +31,14 @@
--});
+@@ -8,1 +14,2 @@
+-use Illuminate\Http\Request;
++use Illuminate\Http\Request;
++use Inertia\Testing\AssertableInertia;
+@@ -10,1 +17,1 @@
+-it('shares a null auth user for guests', function (): void {
++it('shares empty authentication properties for guests', function (): void {
+@@ -16,1 +23,5 @@
+-    expect($shared['auth']['user'])->toBeNull();
++    expect($shared['auth'])->toBe([
++        'organization' => null,
++        'permissions' => [],
++        'user' => null,
++    ]);
+@@ -19,1 +30,1 @@
+-it('shares the authenticated user resource', function (): void {
++it('shares the authenticated user without an organization or permissions', function (): void {
+@@ -26,3 +37,57 @@
+-    expect($shared['auth']['user'])
+-        ->toBeInstanceOf(UserResource::class)
+-        ->resource->toBe($user);
++    expect($shared['auth']['organization'])->toBeNull()
++        ->and($shared['auth']['permissions'])->toBe([])
++        ->and($shared['auth']['user'])->toBeInstanceOf(UserResource::class)->resource->toBe($user);
 +});
 +
-+it('shares the current organization resource', function (): void {
++it('shares the current organization resource and sorted permissions', function (): void {
 +    $organization = Organization::factory()->createOne();
 +    $user = User::factory()->withOrganization($organization)->createOne();
++    $user->switchOrganization($organization);
++    $user->assignRole(MembershipRole::Admin);
++
 +    $request = Request::create('/');
 +    $request->setUserResolver(fn (): User => $user);
 +
 +    $shared = resolve(HandleInertiaRequests::class)->share($request);
 +
-+    expect($shared['auth']['organization'])
-+        ->toBeInstanceOf(OrganizationResource::class)
-+        ->resource->is($organization)->toBeTrue();
++    expect($shared['auth']['organization'])->toBeInstanceOf(OrganizationResource::class)->resource->is($organization)->toBeTrue()
++        ->and($shared['auth']['permissions'])->toBe(MembershipPermission::values());
 +});
++
++it('shares direct permissions alongside role permissions without duplicates', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->assignRole(MembershipRole::Admin);
++    $user->givePermissionTo(MembershipPermission::TeamManage);
++
++    get(route('home'))->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('auth.permissions', MembershipPermission::values()));
++});
++
++it('does not share permissions from a previously active organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->assignRole(MembershipRole::Admin);
++    $user->load(['permissions', 'roles']);
++
++    $otherOrganization = Organization::factory()->createOne();
++    $user->organizations()->attach($otherOrganization);
++    $user->unsetRelation('organizations');
++    $user->switchOrganization($otherOrganization);
++    $user->assignRole(MembershipRole::Viewer);
++
++    get(route('home'))->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('auth.organization.id', $otherOrganization->sqid)
++        ->where('auth.permissions', []));
++});
++
++it('shares sorted direct permissions for the active organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->givePermissionTo([MembershipPermission::TeamView, MembershipPermission::SettingsView]);
++
++    get(route('home'))->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('auth.permissions', [MembershipPermission::SettingsView->value, MembershipPermission::TeamView->value]));
 diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integration/Http/Resources/UserResourceTest.php
 --- a/tests/Integration/Http/Resources/UserResourceTest.php
 +++ b/tests/Integration/Http/Resources/UserResourceTest.php
-@@ -5,1 +5,2 @@
--use App\Models\User;
+@@ -4,1 +4,2 @@
+-
++
 +use App\Models\Organization;
-+use App\Models\User;
+@@ -14,1 +15,1 @@
+-    expect([
++    expect($resource)->toEqual([
 @@ -19,1 +20,2 @@
 -        'created_at' => $user->created_at->toJSON(),
 +        'created_at' => $user->created_at->toJSON(),
 +        'current_organization' => null,
-@@ -28,1 +30,15 @@
--});
+@@ -25,1 +27,1 @@
+-        'name' => $user->name,
++        'name' => $user->name->full(),
+@@ -27,1 +29,11 @@
+-    ])->toMatchArray($resource);
++    ]);
 +});
 +
 +it('includes the current organization', function (): void {
@@ -575,9 +1082,4 @@ diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integ
 +    $resource = json_decode($user->toResource()->toJson(), true);
 +
 +    expect($resource['current_organization'])
-+        ->toMatchArray([
-+            'id' => $organization->sqid,
-+            'name' => $organization->name,
-+            'slug' => $organization->slug,
-+        ]);
-+});
++        ->toEqual(json_decode($organization->toResource()->toJson(), true));

@@ -28,23 +28,9 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        env:
-          POSTGRES_DB: template_testing
-          POSTGRES_HOST_AUTH_METHOD: trust
-        image: postgres:18@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636 # 18.4
-        options: >-
-          --health-cmd "pg_isready -U postgres -d template_testing"
-          --health-interval 10s
-          --health-retries 5
-          --health-timeout 5s
-        ports:
-          - 5432:5432
-
     permissions:
       contents: read
-      id-token: write # Exchange an OIDC token for the agent credentials.
+      id-token: write # mint the OIDC token Pullfrog exchanges for its credentials
 
     steps:
       - name: Checkout code
@@ -53,30 +39,23 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Setup Mise
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          install_args: node nub
-
-      - name: Setup PHP
-        uses: hosmelq/.github/.github/actions/php-setup@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
+      - name: Prepare composer dependencies
+        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
         with:
           php-tools: ''
           php-version: ${{ env.PHP_VERSION }}
 
-      - name: Create databases
+      - name: Setup testing environment
         run: |
-          psql -h 127.0.0.1 -U postgres -d postgres <<'SQL'
-          SELECT 'CREATE DATABASE template'
-          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'template')\gexec
-          SELECT 'CREATE DATABASE template_testing'
-          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'template_testing')\gexec
-          SQL
+          cp .env.testing.example .env.testing
+          php artisan key:generate --env=testing
+
+      - name: Start PostgreSQL
+        env:
+          COMPOSE_DB_PORT: '5432'
+        run: docker compose up --detach --wait postgresql
 
       - name: Run agent
         uses: pullfrog/pullfrog@v0
-        env:
-          MISE_DISABLE_TOOLS: php
-          MISE_TASK_RUN_AUTO_INSTALL: 'false'
         with:
           prompt: ${{ inputs.prompt }}

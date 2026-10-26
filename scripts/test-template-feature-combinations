@@ -57,8 +57,10 @@ validate_dependency_analyser_ignores() {
 
         $expected = [
             "archtechx/enums",
+            "laravel/octane",
             "laravel/tinker",
             "propaganistas/laravel-phone",
+            "resend/resend-php",
             "thecodingmachine/safe",
             "tpetry/laravel-query-expressions",
         ];
@@ -73,12 +75,12 @@ validate_dependency_analyser_ignores() {
             $expected[] = "laravel/wayfinder";
         }
 
-        if (in_array("media", $selected, true)) {
-            $expected[] = "league/flysystem-aws-s3-v3";
+        if (in_array("health", $selected, true)) {
+            $expected[] = "laravel/slack-notification-channel";
         }
 
-        if (in_array("railway", $selected, true)) {
-            $expected[] = "laravel/octane";
+        if (in_array("media", $selected, true)) {
+            $expected[] = "league/flysystem-aws-s3-v3";
         }
 
         $actual = $packageMatches[1];
@@ -177,32 +179,39 @@ for ((mask = 1; mask <= total; mask++)); do
         fi
     done
 
-    selected_combination_patches=()
-
-    for combination in "${combination_patches[@]}"; do
-        IFS='+' read -r -a combined_features <<< "$combination"
-        combination_selected=true
-
-        for feature in "${combined_features[@]}"; do
-            if ! contains "$feature" "${selected[@]}"; then
-                combination_selected=false
-            fi
-        done
-
-        if [[ "$combination_selected" == true ]]; then
-            selected_combination_patches+=("$scenario/resources/template/patches/$combination.patch")
-        fi
-    done
-
     printf '[%02d/%02d] %s\n' "$mask" "$total" "${selected[*]}"
 
     git -C "$scenario" apply --check --unidiff-zero "${patches[@]}"
     git -C "$scenario" apply --unidiff-zero "${patches[@]}"
 
-    if ((${#selected_combination_patches[@]} > 0)); then
-        git -C "$scenario" apply --check --unidiff-zero "${selected_combination_patches[@]}"
-        git -C "$scenario" apply --unidiff-zero "${selected_combination_patches[@]}"
-    fi
+    for ((size = 2; size <= ${#selected[@]}; size++)); do
+        selected_combination_patches=()
+
+        for combination in "${combination_patches[@]}"; do
+            IFS='+' read -r -a combined_features <<< "$combination"
+
+            if ((${#combined_features[@]} != size)); then
+                continue
+            fi
+
+            combination_selected=true
+
+            for feature in "${combined_features[@]}"; do
+                if ! contains "$feature" "${selected[@]}"; then
+                    combination_selected=false
+                fi
+            done
+
+            if [[ "$combination_selected" == true ]]; then
+                selected_combination_patches+=("$scenario/resources/template/patches/$combination.patch")
+            fi
+        done
+
+        if ((${#selected_combination_patches[@]} > 0)); then
+            git -C "$scenario" apply --check --unidiff-zero "${selected_combination_patches[@]}"
+            git -C "$scenario" apply --unidiff-zero "${selected_combination_patches[@]}"
+        fi
+    done
 
     php -r 'json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);' "$scenario/composer.json"
 
@@ -233,7 +242,7 @@ for ((mask = 1; mask <= total; mask++)); do
             $composer = json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR);
             $package = json_decode(file_get_contents($argv[2]), true, 512, JSON_THROW_ON_ERROR);
 
-            if (($composer["require-dev"]["pestphp/pest-plugin-browser"] ?? null) !== "^5.0") {
+            if (($composer["require-dev"]["pestphp/pest-plugin-browser"] ?? null) !== "^5.1") {
                 throw new RuntimeException("The generated Composer dependencies must install Pest Browser Testing.");
             }
 
@@ -248,7 +257,7 @@ for ((mask = 1; mask <= total; mask++)); do
             if (($package["devEngines"]["packageManager"] ?? null) !== [
                 "name" => "nub",
                 "version" => $mise["version"],
-                "onFail" => "warn",
+                "onFail" => "ignore",
             ]) {
                 throw new RuntimeException("The generated devEngines requirement must match the exact Mise version.");
             }
@@ -262,20 +271,14 @@ for ((mask = 1; mask <= total; mask++)); do
             }
         ' "$scenario/composer.json" "$scenario/package.json" "$scenario/mise.toml"
 
-        [[ -f "$scenario/nub.jsonc" ]]
-        [[ -f "$scenario/tests/Browser/.gitkeep" ]]
+        [[ -f "$scenario/.npmrc" ]]
+        [[ ! -e "$scenario/nub.jsonc" ]]
         [[ ! -e "$scenario/pnpm-workspace.yaml" ]]
-        grep -Fq '/tests/Browser/Screenshots' "$scenario/.gitignore"
+        grep -Fq 'tests/Browser/Screenshots' "$scenario/.gitignore"
         grep -Fq '<testsuite name="Browser">' "$scenario/phpunit.xml"
         grep -Fq '<directory>tests/Browser</directory>' "$scenario/phpunit.xml"
-        grep -Fq -- "->in('Browser', 'Feature', 'Integration', 'Unit');" "$scenario/tests/Pest.php"
-        grep -Fq 'nub exec playwright install --with-deps' "$scenario/.github/workflows/ci.yml"
-        grep -Fq 'run: nub exec tsc -b' "$scenario/lefthook.yml"
-        if grep -Fq 'nub exec tsgo' "$scenario/lefthook.yml"; then
-            printf 'The frontend hook must use the installed TypeScript compiler.\n' >&2
-
-            exit 1
-        fi
+        grep -Fq -- "->in('Browser');" "$scenario/tests/Pest.php"
+        grep -Fq 'nubx playwright install --with-deps chromium' "$scenario/.github/workflows/ci.yml"
     fi
 done
 

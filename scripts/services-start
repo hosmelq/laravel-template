@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+force=false
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --force)
+      force=true
+      shift
+      ;;
+    *)
+      echo "Usage: $0 [--force]" >&2
+      exit 1
+      ;;
+  esac
+done
+
 for env_file in .env .env.testing; do
   if [ ! -f "${env_file}" ]; then
     echo "Missing ${env_file}: run 'mise run setup:install' first" >&2
@@ -8,7 +23,20 @@ for env_file in .env .env.testing; do
   fi
 done
 
-docker compose up --detach --wait
+running=false
+
+if [ "${force}" = false ]; then
+  configured="$(docker compose config --services | sort)"
+  ready="$(docker compose ps --format '{{.Service}} {{.State}} {{.Health}}' | awk '$2 == "running" && ($3 == "" || $3 == "healthy") { print $1 }' | sort)"
+
+  if [ "${configured}" = "${ready}" ]; then
+    running=true
+  fi
+fi
+
+if [ "${running}" = false ]; then
+  docker compose up --detach --wait
+fi
 
 database_port="$(docker compose port postgresql 5432 | sed 's/.*://')"
 mail_port="$(docker compose port mailpit 1025 | sed 's/.*://')"

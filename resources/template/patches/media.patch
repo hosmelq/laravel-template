@@ -115,15 +115,35 @@ diff --git a/composer.json b/composer.json
 @@ -20,1 +20,2 @@
 -    "hosmelq/name-of-person": "^0.3.0",
 +    "hosmelq/name-of-person": "^0.3.0",
-+    "intervention/image": "^4.2.1",
++    "intervention/image": "^4.3.3",
 @@ -22,1 +23,2 @@
 -    "laravel/tinker": "^3.0.2",
 +    "laravel/tinker": "^3.0.2",
-+    "league/flysystem-aws-s3-v3": "^3.35.2",
++    "league/flysystem-aws-s3-v3": "^3.35.3",
 @@ -24,1 +26,2 @@
--    "sentry/sentry-laravel": "^4.28.0",
-+    "sentry/sentry-laravel": "^4.28.0",
+-    "sentry/sentry-laravel": "^4.29.0",
++    "sentry/sentry-laravel": "^4.29.0",
 +    "spatie/laravel-medialibrary": "^11.23.8",
+diff --git a/config-validation/filesystems.php b/config-validation/filesystems.php
+new file mode 100644
+--- /dev/null
++++ b/config-validation/filesystems.php
+@@ -0,0 +1,15 @@
++<?php
++
++declare(strict_types=1);
++
++use AshAllenDesign\ConfigValidator\Services\Rule;
++
++return [
++
++    Rule::make('disks.s3.bucket')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.endpoint')->rules(['nullable', 'url:https'])->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.key')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.region')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.secret')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
++
++];
 diff --git a/config/media-library.php b/config/media-library.php
 new file mode 100644
 --- /dev/null
@@ -531,6 +551,16 @@ new file mode 100644
 +        });
 +    }
 +};
+diff --git a/tests/Feature/Console/ValidateConfigCommandTest.php b/tests/Feature/Console/ValidateConfigCommandTest.php
+--- a/tests/Feature/Console/ValidateConfigCommandTest.php
++++ b/tests/Feature/Console/ValidateConfigCommandTest.php
+@@ -23,1 +23,5 @@
+-        'cache.default' => 'database',
++        'cache.default' => 'database',
++        'filesystems.disks.s3.bucket' => 'template',
++        'filesystems.disks.s3.key' => 'access-key',
++        'filesystems.disks.s3.region' => 'auto',
++        'filesystems.disks.s3.secret' => 'secret-key',
 diff --git a/tests/Integration/Listeners/SetMediaDimensionsTest.php b/tests/Integration/Listeners/SetMediaDimensionsTest.php
 new file mode 100644
 --- /dev/null

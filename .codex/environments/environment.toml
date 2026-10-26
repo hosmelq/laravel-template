@@ -1,10 +1,19 @@
-name = "Testing"
+name = "Template"
 
 version = 1
+
+[cleanup]
+script = '''
+mise run services:destroy
+'''
 
 [setup]
 script = '''
 set -e
+
+export COMPOSE_DB_PORT=0
+export COMPOSE_MAIL_PORT=0
+export COMPOSE_MAILPIT_PORT=0
 
 mise run setup
 '''

@@ -41,17 +41,21 @@ trait HasSqid
 
     /**
      * @param BuilderContract|Model $query
+     * @param mixed $value
      * @param null|string $field
      */
-    public function resolveRouteBindingQuery(mixed $query, mixed $value, mixed $field = null): BuilderContract
+    public function resolveRouteBindingQuery($query, $value, $field = null): BuilderContract
     {
+        $sqidFields = ['sqid', $this->qualifyColumn('sqid')];
         $routeKeyField = $field ?? $this->getRouteKeyName();
 
-        if (! in_array($routeKeyField, ['sqid', $this->qualifyColumn('sqid')], true)) {
+        if (! in_array($routeKeyField, $sqidFields, true)) {
             return parent::resolveRouteBindingQuery($query, $value, $field);
         }
 
-        $id = is_string($value) ? resolve(Sqid::class)->decode($value) : null;
+        $id = is_string($value)
+            ? resolve(Sqid::class)->decode($value)
+            : null;
 
         return $query->where($this->qualifyColumn($this->getKeyName()), $id);
     }

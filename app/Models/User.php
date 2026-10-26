@@ -7,14 +7,20 @@ namespace App\Models;
 use App\Models\Concerns\HasSqid;
 use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
+use HosmelQ\AuditLog\Contracts\HasAuditLogIdentity;
+use HosmelQ\AuditLog\Support\AuditLogIdentity;
 use HosmelQ\NameOfPerson\PersonName;
 use HosmelQ\NameOfPerson\PersonNameCast;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Override;
 
 /**
@@ -31,13 +37,27 @@ use Override;
  * @property-read PersonName $name
  */
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable implements FilamentUser, HasAuditLogIdentity, MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory;
 
     use HasSqid;
     use Notifiable;
+
+    public function auditLogIdentity(): AuditLogIdentity
+    {
+        return new AuditLogIdentity(
+            id: $this->id,
+            type: $this->getMorphClass(),
+            name: $this->email,
+        );
+    }
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return $this->isAdmin();
+    }
 
     public function isAdmin(): bool
     {
@@ -52,5 +72,13 @@ class User extends Authenticatable implements MustVerifyEmail
             'name' => PersonNameCast::class,
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * @return Attribute<string, string>
+     */
+    protected function email(): Attribute
+    {
+        return Attribute::make(set: fn (string $value): string => Str::lower($value));
     }
 }

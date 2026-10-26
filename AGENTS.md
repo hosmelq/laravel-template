@@ -3,7 +3,7 @@
 
 # Alphabetical Order
 
-- Alphabetize every orderable element and structure at every level whenever doing so does not change meaning or behavior. Preserve non-alphabetical order only when the sequence has an explicit semantic or functional purpose.
+- Alphabetize every orderable element and structure at every level. Preserve non-alphabetical order whenever it has a semantic or functional purpose, even if reordering would not change runtime behavior.
 
 === .ai/laravel-project-patterns rules ===
 
@@ -144,6 +144,18 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
 - Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
 - When creating tests, make use of `php artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
+
+=== laravel-octane/core rules ===
+
+# Laravel Octane
+
+This application uses Laravel Octane, a long-running PHP server. The application bootstraps once and handles many requests within the same process.
+
+- Never store request-specific state in singletons or static properties, because it can leak across requests.
+- Use `config('octane.server')` to detect the active driver (`swoole`, `roadrunner`, or `frankenphp`).
+- Prefer scoped bindings (`$this->app->scoped()`) over singletons for per-request services.
+
+When working on Octane-specific features (concurrency, shared tables, memory, driver configuration, testing), invoke `octane-development` for detailed rules.
 
 === pint/core rules ===
 

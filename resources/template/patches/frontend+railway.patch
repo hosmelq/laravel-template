@@ -12,7 +12,7 @@ diff --git a/.github/renovate.json b/.github/renovate.json
 diff --git a/.railway/railway.ts b/.railway/railway.ts
 --- a/.railway/railway.ts
 +++ b/.railway/railway.ts
-@@ -3,1 +3,26 @@
+@@ -3,1 +3,28 @@
 -export default defineRailway(() => {
 +export default defineRailway(() => {
 +  const ssr = service('ssr', {
@@ -33,22 +33,26 @@ diff --git a/.railway/railway.ts b/.railway/railway.ts
 +    },
 +    env: {
 +      APP_ENV: preserve(),
++      FONTAWESOME_NPM_AUTH_TOKEN: preserve(),
++      HEROUI_AUTH_TOKEN: preserve(),
 +      LARAVEL_ENV_ENCRYPTION_KEY: preserve(),
 +      PORT: '13714',
 +      SENTRY_AUTH_TOKEN: preserve(),
 +    },
-+    source: github('template/template', {branch: 'main'}),
++    source: github('template/template', {branch: 'main', checkSuites: true}),
 +  })
 +
-@@ -21,1 +46,2 @@
+@@ -21,1 +48,4 @@
 -      APP_ENV: preserve(),
 +      APP_ENV: preserve(),
++      FONTAWESOME_NPM_AUTH_TOKEN: preserve(),
++      HEROUI_AUTH_TOKEN: preserve(),
 +      INERTIA_SSR_URL: 'http://${{ssr.RAILWAY_PRIVATE_DOMAIN}}:${{ssr.PORT}}',
-@@ -23,1 +49,2 @@
+@@ -23,1 +53,2 @@
 -      PORT: '8080',
 +      PORT: '8080',
 +      SENTRY_AUTH_TOKEN: preserve(),
-@@ -78 +105 @@ export default defineRailway(() => {
+@@ -78,1 +109,1 @@
 -  return project('Template', {resources: [app, queue, scheduler]})
 +  return project('Template', {resources: [ssr, app, queue, scheduler]})
 diff --git a/infrastructure/railway/app.Dockerfile b/infrastructure/railway/app.Dockerfile
@@ -60,7 +64,7 @@ diff --git a/infrastructure/railway/app.Dockerfile b/infrastructure/railway/app.
 +# Nub tooling stage
 +FROM ghcr.io/nubjs/nub:0.9.5-slim AS nub-runtime
 +
-@@ -21,1 +24,37 @@
+@@ -21,1 +24,42 @@
 -
 +
 +# JS dependencies stage
@@ -78,10 +82,15 @@ diff --git a/infrastructure/railway/app.Dockerfile b/infrastructure/railway/app.
 +    && rm -rf /var/lib/apt/lists/*
 +
 +# Copy only manifest files before installing dependencies
-+COPY nub.jsonc nub.lock package.json ./
++COPY .npmrc nub.lock package.json ./
 +
 +# Install js dependencies
-+RUN nub ci
++ARG FONTAWESOME_NPM_AUTH_TOKEN
++ARG HEROUI_AUTH_TOKEN
++
++RUN printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > /tmp/npmrc \
++    && NPM_CONFIG_USERCONFIG=/tmp/npmrc nub ci \
++    && rm -f /tmp/npmrc
 +
 +# Asset build stage
 +FROM js-dependencies AS frontend-build
@@ -99,7 +108,7 @@ diff --git a/infrastructure/railway/app.Dockerfile b/infrastructure/railway/app.
 +
 +RUN nub run build
 +
-@@ -36,1 +75,3 @@
+@@ -37,1 +81,3 @@
 -COPY --chown=www-data:www-data --from=composer-dependencies $APP_BASE_DIR/vendor ./vendor
 +COPY --chown=www-data:www-data --from=composer-dependencies $APP_BASE_DIR/vendor ./vendor
 +COPY --chown=www-data:www-data --from=frontend-build $APP_BASE_DIR/bootstrap/ssr ./bootstrap/ssr
@@ -108,8 +117,8 @@ diff --git a/infrastructure/railway/ssr.Dockerfile b/infrastructure/railway/ssr.
 new file mode 100644
 --- /dev/null
 +++ b/infrastructure/railway/ssr.Dockerfile
-@@ -0,0 +1,90 @@
-+FROM serversideup/php:8.5-cli-v4.5.3 AS base
+@@ -0,0 +1,95 @@
++FROM serversideup/php:8.5.12-cli-v5.0.2 AS base
 +
 +USER root
 +
@@ -148,10 +157,15 @@ new file mode 100644
 +    && rm -rf /var/lib/apt/lists/*
 +
 +# Copy only manifest files before installing dependencies
-+COPY nub.jsonc nub.lock package.json ./
++COPY .npmrc nub.lock package.json ./
 +
 +# Install js dependencies
-+RUN nub ci
++ARG FONTAWESOME_NPM_AUTH_TOKEN
++ARG HEROUI_AUTH_TOKEN
++
++RUN printf '//npm.fontawesome.com/:_authToken=%s\n' "${FONTAWESOME_NPM_AUTH_TOKEN}" > /tmp/npmrc \
++    && NPM_CONFIG_USERCONFIG=/tmp/npmrc nub ci \
++    && rm -f /tmp/npmrc
 +
 +# Asset build stage
 +FROM js-dependencies AS frontend-build

@@ -128,22 +128,29 @@ backend = "vfox:php"
 specifiers = ["8.5"]
 
 [tools.php."platforms.linux-arm64"]
+checksum = "sha256:c8134158e53c57f4eedf7fb93110cfa60a23b0a9916fff270c987f2b29794358"
 url = "https://github.com/php/php-src/archive/php-8.5.9.tar.gz"
 
 [tools.php."platforms.linux-arm64-musl"]
+checksum = "sha256:c8134158e53c57f4eedf7fb93110cfa60a23b0a9916fff270c987f2b29794358"
 url = "https://github.com/php/php-src/archive/php-8.5.9.tar.gz"
 
 [tools.php."platforms.linux-x64"]
+checksum = "sha256:c8134158e53c57f4eedf7fb93110cfa60a23b0a9916fff270c987f2b29794358"
 url = "https://github.com/php/php-src/archive/php-8.5.9.tar.gz"
 
 [tools.php."platforms.linux-x64-musl"]
+checksum = "sha256:c8134158e53c57f4eedf7fb93110cfa60a23b0a9916fff270c987f2b29794358"
 url = "https://github.com/php/php-src/archive/php-8.5.9.tar.gz"
 
 [tools.php."platforms.macos-arm64"]
+checksum = "sha256:c8134158e53c57f4eedf7fb93110cfa60a23b0a9916fff270c987f2b29794358"
 url = "https://github.com/php/php-src/archive/php-8.5.9.tar.gz"
 
 [tools.php."platforms.macos-x64"]
+checksum = "sha256:c8134158e53c57f4eedf7fb93110cfa60a23b0a9916fff270c987f2b29794358"
 url = "https://github.com/php/php-src/archive/php-8.5.9.tar.gz"
 
 [tools.php."platforms.windows-x64"]
+checksum = "sha256:c8134158e53c57f4eedf7fb93110cfa60a23b0a9916fff270c987f2b29794358"
 url = "https://github.com/php/php-src/archive/php-8.5.9.tar.gz"

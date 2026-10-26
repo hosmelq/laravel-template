@@ -1,0 +1,832 @@
+diff --git a/app/Http/Controllers/EmailConfirmedController.php b/app/Http/Controllers/EmailConfirmedController.php
+--- a/app/Http/Controllers/EmailConfirmedController.php
++++ b/app/Http/Controllers/EmailConfirmedController.php
+@@ -6,1 +6,2 @@
+-
++
++use App\Http\Responses\LoginResponse;
+@@ -8,1 +9,2 @@
+-use Illuminate\Container\Attributes\CurrentUser;
++use Illuminate\Container\Attributes\CurrentUser;
++use Illuminate\Http\Request;
+@@ -14,1 +16,1 @@
+-    public function __invoke(#[CurrentUser] User $user): Response
++    public function __invoke(#[CurrentUser] User $user, Request $request): Response
+@@ -16,1 +18,2 @@
+-        return Inertia::render('auth/EmailConfirmed', [
++        return Inertia::render('auth/EmailConfirmed', [
++            'continueUrl' => LoginResponse::redirectTo($request),
+diff --git a/app/Http/Controllers/InvitationController.php b/app/Http/Controllers/InvitationController.php
+--- a/app/Http/Controllers/InvitationController.php
++++ b/app/Http/Controllers/InvitationController.php
+@@ -36,1 +36,2 @@
+-                'email' => $invitation->email,
++                'email' => $invitation->email,
++                'emailHasAccount' => User::query()->where('email', $invitation->email)->exists(),
+diff --git a/app/Http/Controllers/InvitationRegistrationController.php b/app/Http/Controllers/InvitationRegistrationController.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Controllers/InvitationRegistrationController.php
+@@ -0,0 +1,51 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Controllers;
++
++use App\Actions\Fortify\CreateNewUser;
++use App\Actions\Invitations\AcceptInvitation;
++use App\Http\Responses\LoginResponse;
++use App\Models\Invitation;
++use App\Models\User;
++use Illuminate\Contracts\Auth\StatefulGuard;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\DB;
++
++class InvitationRegistrationController
++{
++    public function store(
++        string $token,
++        AcceptInvitation $acceptInvitation,
++        CreateNewUser $createNewUser,
++        Request $request,
++        StatefulGuard $guard,
++    ): RedirectResponse {
++        DB::transaction(function () use ($acceptInvitation, $createNewUser, $guard, $request, $token): void {
++            $invitation = Invitation::query()
++                ->where('token', hash('sha256', $token))
++                ->lockForUpdate()
++                ->firstOrFail();
++
++            abort_if($invitation->accepted_at !== null || $invitation->isExpired(), 404);
++            abort_if(User::query()->where('email', $invitation->email)->exists(), 409);
++
++            $user = $createNewUser->create([
++                ...$request->only(['first_name', 'last_name', 'password', 'password_confirmation']),
++                'email' => $invitation->email,
++            ]);
++
++            $user->markEmailAsVerified();
++
++            $guard->login($user);
++            $acceptInvitation->handle($user, $invitation);
++        });
++
++        $request->session()->regenerate();
++        $request->session()->forget('url.intended');
++
++        return redirect(LoginResponse::redirectTo($request));
++    }
++}
+diff --git a/app/Http/Controllers/InvitationSessionController.php b/app/Http/Controllers/InvitationSessionController.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Controllers/InvitationSessionController.php
+@@ -0,0 +1,21 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Controllers;
++
++use Illuminate\Contracts\Auth\StatefulGuard;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Http\Request;
++
++class InvitationSessionController
++{
++    public function destroy(string $token, Request $request, StatefulGuard $guard): RedirectResponse
++    {
++        $guard->logout();
++        $request->session()->invalidate();
++        $request->session()->regenerateToken();
++
++        return to_route('invitations.show', ['token' => $token]);
++    }
++}
+diff --git a/app/Http/Responses/LoginResponse.php b/app/Http/Responses/LoginResponse.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Responses/LoginResponse.php
+@@ -0,0 +1,44 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Responses;
++
++use App\Enums\MembershipPermission;
++use Illuminate\Http\JsonResponse;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Http\Request;
++use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
++
++class LoginResponse implements LoginResponseContract
++{
++    public static function redirectTo(Request $request): string
++    {
++        $user = $request->user();
++        $organization = $user?->defaultOrganization();
++
++        if ($organization === null) {
++            return route('organizations.create');
++        }
++
++        if (! $user->isCurrentOrganization($organization)) {
++            $user->switchOrganization($organization);
++        }
++
++        setPermissionsTeamId($organization->id);
++
++        return $user->can(MembershipPermission::SettingsView)
++            ? route('organizations.settings.general', ['organization' => $organization])
++            : route('home');
++    }
++
++    /**
++     * @param Request $request
++     */
++    public function toResponse($request): JsonResponse|RedirectResponse
++    {
++        return $request->wantsJson()
++            ? response()->json(['two_factor' => false])
++            : redirect()->intended(self::redirectTo($request));
++    }
++}
+diff --git a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifyServiceProvider.php
+--- a/app/Providers/FortifyServiceProvider.php
++++ b/app/Providers/FortifyServiceProvider.php
+@@ -10,1 +10,2 @@
+-use App\Actions\Fortify\UpdateUserProfileInformation;
++use App\Actions\Fortify\UpdateUserProfileInformation;
++use App\Http\Responses\LoginResponse;
+@@ -26,1 +27,2 @@
+-use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
++use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
++use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
+@@ -116,1 +118,6 @@
+-    }
++    }
++
++    public function register(): void
++    {
++        $this->app->bind(LoginResponseContract::class, LoginResponse::class);
++    }
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -7,1 +6,0 @@
+-use App\Http\Middleware\SetOrganizationPermissionContext;
+@@ -9,1 +8,3 @@
+-use App\Http\Middleware\SetLocale;
++use App\Http\Middleware\SetLocale;
++use App\Http\Middleware\SetOrganizationPermissionContext;
++use App\Http\Responses\LoginResponse;
+@@ -34,1 +35,1 @@
+-            ->redirectUsersTo('/')
++            ->redirectUsersTo(fn (Request $request): string => LoginResponse::redirectTo($request))
+@@ -58,1 +59,1 @@
+-                    return redirect(config()->string('fortify.home'));
++                    return redirect(LoginResponse::redirectTo($request));
+diff --git a/resources/js/layouts/Organization.tsx b/resources/js/layouts/Organization.tsx
+--- a/resources/js/layouts/Organization.tsx
++++ b/resources/js/layouts/Organization.tsx
+@@ -1,1 +1,1 @@
+-import {faGear} from '@fortawesome/pro-regular-svg-icons'
++import {faArrowRightFromBracket, faGear} from '@fortawesome/pro-regular-svg-icons'
+@@ -5,1 +5,1 @@
+-import {usePage} from '@inertiajs/react'
++import {router, usePage} from '@inertiajs/react'
+@@ -8,1 +8,2 @@
+-import {show} from '#/actions/App/Http/Controllers/OrganizationController'
++import {show} from '#/actions/App/Http/Controllers/OrganizationController'
++import {destroy as logout} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
+@@ -88,1 +89,9 @@
+-                )}
++                )}
++                <Dropdown.Item
++                  id="logout"
++                  onAction={() => router.post(logout.url())}
++                  textValue="Log out"
++                >
++                  <FontAwesomeIcon icon={faArrowRightFromBracket} />
++                  <Label>Log out</Label>
++                </Dropdown.Item>
+diff --git a/resources/js/layouts/index.ts b/resources/js/layouts/index.ts
+--- a/resources/js/layouts/index.ts
++++ b/resources/js/layouts/index.ts
+@@ -12,2 +11,0 @@
+-  'organization/': [Modal, App, Organization],
+-  'organization/Create': [Modal, App],
+@@ -14,1 +12,4 @@
+-  'auth/': [Modal, Auth],
++  'auth/': [Modal, Auth],
++  'invitations/': [Modal, Auth],
++  'organization/': [Modal, App, Organization],
++  'organization/Create': [Modal, Auth],
+diff --git a/resources/js/pages/auth/EmailConfirmed.tsx b/resources/js/pages/auth/EmailConfirmed.tsx
+--- a/resources/js/pages/auth/EmailConfirmed.tsx
++++ b/resources/js/pages/auth/EmailConfirmed.tsx
+@@ -6,1 +6,2 @@
+-interface EmailConfirmedProps {
++interface EmailConfirmedProps {
++  continueUrl: string
+@@ -10,1 +11,1 @@
+-export default function EmailConfirmed({firstName}: EmailConfirmedProps) {
++export default function EmailConfirmed({continueUrl, firstName}: EmailConfirmedProps) {
+@@ -19,1 +20,1 @@
+-      <Link className={buttonVariants({fullWidth: true})} href="/">
++      <Link className={buttonVariants({fullWidth: true})} href={continueUrl}>
+diff --git a/resources/js/pages/invitations/Show.tsx b/resources/js/pages/invitations/Show.tsx
+--- a/resources/js/pages/invitations/Show.tsx
++++ b/resources/js/pages/invitations/Show.tsx
+@@ -1,2 +1,2 @@
+-import {Button, Card, Link} from '@heroui/react'
+-import {Head} from '@inertiajs/react'
++import {Button, FieldError, Input, Label, Link, TextField} from '@heroui/react'
++import {Head, setLayoutProps} from '@inertiajs/react'
+@@ -4,1 +4,3 @@
+-import {store} from '#/actions/App/Http/Controllers/InvitationController'
++import {store as accept} from '#/actions/App/Http/Controllers/InvitationController'
++import {store as register} from '#/actions/App/Http/Controllers/InvitationRegistrationController'
++import {destroy as signOut} from '#/actions/App/Http/Controllers/InvitationSessionController'
+@@ -5,1 +7,4 @@
+-import {Form} from '#/components/Form'
++import {Form} from '#/components/Form'
++import type {AuthLayoutProps} from '#/layouts/Auth'
++
++import {PasswordField} from '../auth/_components/PasswordField'
+@@ -10,1 +15,2 @@
+-    email: string
++    email: string
++    emailHasAccount: boolean
+@@ -21,1 +27,14 @@
+-export default function Show({invitation, loginUrl, signedInEmail, token}: ShowProps) {
++export default function Show({invitation, loginUrl, signedInEmail, token}: ShowProps) {
++  const canRegister =
++    !invitation.accepted &&
++    !invitation.expired &&
++    signedInEmail === null &&
++    !invitation.emailHasAccount
++
++  setLayoutProps<AuthLayoutProps>({
++    accountLink: canRegister && loginUrl ? {href: loginUrl, label: 'Sign in'} : undefined,
++    accountText: canRegister ? 'Already have an account?' : undefined,
++    heading: `Join ${invitation.organizationName}`,
++    lead: `${invitation.invitedBy} invited you to join as ${invitation.roleLabel}.`,
++  })
++
+@@ -25,31 +44,15 @@
+-      <div className="m-auto w-full max-w-md p-4">
+-        <Card>
+-          <Card.Header>
+-            <Card.Title>Join {invitation.organizationName}</Card.Title>
+-          </Card.Header>
+-          <Card.Content className="flex flex-col gap-4">
+-            <p>
+-              {invitation.invitedBy} invited you to join as {invitation.roleLabel}.
+-            </p>
+-            {invitation.accepted ? (
+-              <p>This invitation has already been accepted.</p>
+-            ) : invitation.expired ? (
+-              <p>This invitation has expired. Ask for a new invitation.</p>
+-            ) : signedInEmail === null ? (
+-              <>
+-                <p>Sign in with {invitation.email} to accept this invitation.</p>
+-                {loginUrl && <Link href={loginUrl}>Sign in</Link>}
+-              </>
+-            ) : signedInEmail !== invitation.email ? (
+-              <p>
+-                You are signed in as {signedInEmail}. Sign in with {invitation.email} to accept this
+-                invitation.
+-              </p>
+-            ) : (
+-              <Form action={store(token)}>
+-                {({processing}) => (
+-                  <Button isPending={processing} type="submit">
+-                    Accept invitation
+-                  </Button>
+-                )}
+-              </Form>
++      {invitation.accepted ? (
++        <p>This invitation has already been accepted.</p>
++      ) : invitation.expired ? (
++        <p>This invitation has expired. Ask for a new invitation.</p>
++      ) : signedInEmail !== null && signedInEmail !== invitation.email ? (
++        <div className="flex flex-col gap-4">
++          <p>
++            You are signed in as {signedInEmail}. Sign in with {invitation.email} to accept this
++            invitation.
++          </p>
++          <Form action={signOut(token)}>
++            {({processing}) => (
++              <Button isPending={processing} type="submit">
++                Use another account
++              </Button>
+@@ -57,3 +60,47 @@
+-          </Card.Content>
+-        </Card>
+-      </div>
++          </Form>
++        </div>
++      ) : signedInEmail === invitation.email ? (
++        <Form action={accept(token)}>
++          {({processing}) => (
++            <Button isPending={processing} type="submit">
++              Accept invitation
++            </Button>
++          )}
++        </Form>
++      ) : invitation.emailHasAccount ? (
++        <div className="flex flex-col gap-4">
++          <p>Sign in with {invitation.email} to accept this invitation.</p>
++          {loginUrl && <Link href={loginUrl}>Sign in</Link>}
++        </div>
++      ) : (
++        <Form action={register(token)} className="flex flex-col gap-4" noValidate>
++          {({processing}) => (
++            <>
++              <TextField fullWidth isRequired name="first_name">
++                <Label>First name</Label>
++                <Input autoComplete="given-name" />
++                <FieldError />
++              </TextField>
++              <TextField fullWidth isRequired name="last_name">
++                <Label>Last name</Label>
++                <Input autoComplete="family-name" />
++                <FieldError />
++              </TextField>
++              <TextField fullWidth isReadOnly name="email" value={invitation.email}>
++                <Label>Email</Label>
++                <Input autoComplete="email" type="email" />
++                <FieldError />
++              </TextField>
++              <PasswordField autoComplete="new-password" label="Password" name="password" />
++              <PasswordField
++                autoComplete="new-password"
++                label="Confirm password"
++                name="password_confirmation"
++              />
++              <Button isPending={processing} type="submit">
++                Accept and join
++              </Button>
++            </>
++          )}
++        </Form>
++      )}
+diff --git a/resources/js/pages/organization/Create.tsx b/resources/js/pages/organization/Create.tsx
+--- a/resources/js/pages/organization/Create.tsx
++++ b/resources/js/pages/organization/Create.tsx
+@@ -2,1 +2,1 @@
+-import {Head} from '@inertiajs/react'
++import {Head, setLayoutProps} from '@inertiajs/react'
+@@ -5,1 +5,2 @@
+-import {Form} from '#/components/Form'
++import {Form} from '#/components/Form'
++import type {AuthLayoutProps} from '#/layouts/Auth'
+@@ -7,1 +8,6 @@
+-export default function Create() {
++export default function Create() {
++  setLayoutProps<AuthLayoutProps>({
++    heading: 'Create organization',
++    lead: 'Set up an organization to get started.',
++  })
++
+diff --git a/routes/web.php b/routes/web.php
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -4,1 +4,2 @@
+-
++
++use App\Http\Controllers\EmailConfirmedController;
+@@ -5,1 +6,3 @@
+-use App\Http\Controllers\InvitationController;
++use App\Http\Controllers\InvitationController;
++use App\Http\Controllers\InvitationRegistrationController;
++use App\Http\Controllers\InvitationSessionController;
+@@ -7,1 +9,0 @@
+-use App\Http\Controllers\EmailConfirmedController;
+@@ -20,1 +22,2 @@
+-Route::middleware('guest')->group(function (): void {
++Route::middleware('guest')->group(function (): void {
++    Route::post('invitations/{token}/register', [InvitationRegistrationController::class, 'store'])->name('invitations.register');
+@@ -24,1 +27,2 @@
+-    Route::post('invitations/{token}/accept', [InvitationController::class, 'store'])->name('invitations.accept');
++    Route::post('invitations/{token}/accept', [InvitationController::class, 'store'])->name('invitations.accept');
++    Route::delete('invitations/{token}/session', [InvitationSessionController::class, 'destroy'])->name('invitations.session.destroy');
+diff --git a/tests/Browser/Auth/CreateOrganizationTest.php b/tests/Browser/Auth/CreateOrganizationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Browser/Auth/CreateOrganizationTest.php
+@@ -0,0 +1,18 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertGuest;
++
++it('creates an organization during onboarding and signs out from its account menu', function (): void {
++    $user = login();
++
++    visit('/organizations/create')->assertSee('Set up an organization to get started.')
++        ->type('Name', 'Acme')->press('button[type="submit"]')
++        ->assertPathIs('/organizations/acme/settings/general')
++        ->assertSee('Acme')->click('button[aria-label="Account menu for '.$user->name->full().'"] >> visible=true')
++        ->click('role=menuitem[name="Log out"]')->assertPathIs('/login')->assertNoJavascriptErrors();
++
++    assertGuest();
++    expect($user->fresh()->currentOrganization)->name->toBe('Acme');
++});
+diff --git a/tests/Browser/Auth/InvitationTest.php b/tests/Browser/Auth/InvitationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Browser/Auth/InvitationTest.php
+@@ -0,0 +1,64 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertAuthenticatedAs;
++use function Pest\Laravel\assertDatabaseHas;
++use function Pest\Laravel\assertGuest;
++
++use App\Enums\MembershipRole;
++use App\Models\Invitation;
++use App\Models\User;
++use Illuminate\Support\Facades\Validator;
++
++it('creates an account from an invitation and accepts it as a new user', function (): void {
++    Validator::fakeDnsLookups();
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++    visit('/invitations/invitation-token')
++        ->assertSee('Join '.$invitation->organization->name)
++        ->assertValue('Email', $invitation->email)
++        ->assertAttribute('email', 'readonly', '')
++        ->type('First name', 'Alex')->type('Last name', 'Smith')
++        ->type('Password', 'new-password')->type('Confirm password', 'new-password')
++        ->press('Accept and join')->assertPathIs('/')
++        ->assertNoJavascriptErrors();
++
++    $user = User::query()->where('email', $invitation->email)->sole();
++    assertAuthenticatedAs($user);
++    assertDatabaseHas('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++    expect($invitation->fresh()->accepted_at)->not->toBeNull()
++        ->and($user)->current_organization_id->toBe($invitation->organization_id)
++        ->hasVerifiedEmail()
++        ->toBeTrue();
++});
++
++it('signs an existing account in and accepts its invitation', function (): void {
++    $user = User::factory()->createOne();
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne([
++        'email' => $user->email,
++        'role' => MembershipRole::Admin,
++    ]);
++
++    visit('/invitations/invitation-token')->assertDontSee('Accept and join')
++        ->click('Sign in')->type('Email', $user->email)->type('Password', 'password')
++        ->press('button[type="submit"]')->assertPathIs('/invitations/invitation-token')
++        ->press('Accept invitation')
++        ->assertPathIs('/organizations/'.$invitation->organization->slug.'/settings/general')
++        ->assertNoJavascriptErrors();
++
++    assertAuthenticatedAs($user);
++    expect($invitation->fresh()->accepted_at)->not->toBeNull();
++});
++
++it('signs out another account and returns to the invitation registration form', function (): void {
++    login();
++    Invitation::factory()->withToken('invitation-token')->createOne();
++
++    visit('/invitations/invitation-token')->assertDontSee('Accept and join')
++        ->press('Use another account')->assertPathIs('/invitations/invitation-token')
++        ->assertSee('Accept and join')->assertSee('Already have an account?')
++        ->assertNoJavascriptErrors();
++
++    assertGuest();
++});
+diff --git a/tests/Browser/Auth/LoginTest.php b/tests/Browser/Auth/LoginTest.php
+--- a/tests/Browser/Auth/LoginTest.php
++++ b/tests/Browser/Auth/LoginTest.php
+@@ -64,1 +64,1 @@
+-it('signs in with remember me and returns home', function (): void {
++it('signs in with remember me and starts organization onboarding', function (): void {
+@@ -68,1 +68,1 @@
+-        ->check('Remember me')->press('button[type="submit"]')->assertPathIs('/')
++        ->check('Remember me')->press('button[type="submit"]')->assertPathIs('/organizations/create')
+diff --git a/tests/Browser/Auth/VerifyEmailTest.php b/tests/Browser/Auth/VerifyEmailTest.php
+--- a/tests/Browser/Auth/VerifyEmailTest.php
++++ b/tests/Browser/Auth/VerifyEmailTest.php
+@@ -50,1 +50,1 @@
+-it('verifies a signed link and continues home', function (): void {
++it('verifies a signed link and continues organization onboarding', function (): void {
+@@ -59,1 +59,1 @@
+-        ->click('Continue')->assertPathIs('/')->assertNoJavascriptErrors();
++        ->click('Continue')->assertPathIs('/organizations/create')->assertNoJavascriptErrors();
+diff --git a/tests/Feature/Http/AuthenticationPagesTest.php b/tests/Feature/Http/AuthenticationPagesTest.php
+--- a/tests/Feature/Http/AuthenticationPagesTest.php
++++ b/tests/Feature/Http/AuthenticationPagesTest.php
+@@ -178,1 +178,1 @@
+-it('redirects verified users home when a link belongs to another account', function (): void {
++it('redirects verified users to onboarding when a link belongs to another account', function (): void {
+@@ -185,1 +185,1 @@
+-    get($url)->assertRedirect('/')->assertSessionMissing('verification_warning');
++    get($url)->assertRedirectToRoute('organizations.create')->assertSessionMissing('verification_warning');
+diff --git a/tests/Feature/Http/Controllers/InvitationControllerTest.php b/tests/Feature/Http/Controllers/InvitationControllerTest.php
+--- a/tests/Feature/Http/Controllers/InvitationControllerTest.php
++++ b/tests/Feature/Http/Controllers/InvitationControllerTest.php
+@@ -22,1 +22,1 @@
+-    it('shows a guest the invitation without requiring authentication routes', function (): void {
++    it('shows a guest the invitation with the authentication route', function (): void {
+@@ -35,1 +35,1 @@
+-                ->where('loginUrl', null)
++                ->where('loginUrl', route('login'))
+diff --git a/tests/Feature/Http/Controllers/InvitationRegistrationControllerTest.php b/tests/Feature/Http/Controllers/InvitationRegistrationControllerTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/Controllers/InvitationRegistrationControllerTest.php
+@@ -0,0 +1,120 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertAuthenticatedAs;
++use function Pest\Laravel\assertDatabaseCount;
++use function Pest\Laravel\assertDatabaseHas;
++use function Pest\Laravel\assertDatabaseMissing;
++use function Pest\Laravel\assertGuest;
++use function Pest\Laravel\post;
++use function Pest\Laravel\postJson;
++use function Pest\Laravel\withSession;
++
++use App\Enums\AuditLogEvent;
++use App\Enums\MembershipRole;
++use App\Models\Invitation;
++use App\Models\User;
++use HosmelQ\AuditLog\Data\AuditLogData;
++use HosmelQ\AuditLog\Facades\AuditLog;
++use Illuminate\Support\Facades\Hash;
++use Illuminate\Support\Facades\Validator;
++
++it('rejects unknown invitations before creating an account', function (): void {
++    postJson(route('invitations.register', 'missing'))->assertNotFound();
++
++    assertDatabaseCount('users', 0);
++    assertGuest();
++});
++
++it('rejects expired and accepted invitations before creating an account', function (string $state): void {
++    $invitation = Invitation::factory()->withToken('invitation-token')->{$state}()->createOne();
++
++    postJson(route('invitations.register', 'invitation-token'))->assertNotFound();
++
++    assertDatabaseCount('users', 1);
++    assertDatabaseCount('organization_user', 0);
++    assertDatabaseMissing('users', ['email' => $invitation->email]);
++    assertGuest();
++})->with(['accepted', 'expired']);
++
++it('rejects an invitation email that already has an account with 409', function (): void {
++    $user = User::factory()->createOne();
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne(['email' => $user->email]);
++
++    postJson(route('invitations.register', 'invitation-token'))->assertConflict();
++
++    assertDatabaseCount('users', 2);
++    assertDatabaseCount('organization_user', 0);
++    expect($invitation->fresh()->accepted_at)->toBeNull();
++    assertGuest();
++});
++
++it('rejects signed-in users without accepting or creating another account', function (): void {
++    login();
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++    post(route('invitations.register', 'invitation-token'))->assertRedirectToRoute('organizations.create');
++
++    assertDatabaseCount('users', 2);
++    assertDatabaseCount('organization_user', 0);
++    expect($invitation->fresh()->accepted_at)->toBeNull();
++});
++
++it('uses the authentication feature validation without accepting the invitation', function (): void {
++    Validator::fakeDnsLookups();
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++    postJson(route('invitations.register', 'invitation-token'), [
++        'password' => 'new-password',
++        'password_confirmation' => 'different-password',
++    ])->assertUnprocessable()->assertJsonValidationErrors([
++        'first_name' => 'The first name field is required.',
++        'last_name' => 'The last name field is required.',
++        'password' => 'The password field confirmation does not match.',
++    ]);
++
++    assertDatabaseMissing('users', ['email' => $invitation->email]);
++    assertDatabaseCount('organization_user', 0);
++    expect($invitation->fresh()->accepted_at)->toBeNull();
++    assertGuest();
++});
++
++it('registers with the invitation email and joins with its role', function (MembershipRole $role, string $destination): void {
++    AuditLog::fake();
++    Validator::fakeDnsLookups();
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne(['role' => $role]);
++    withSession(['url.intended' => '/unrelated', '_token' => 'old-token']);
++    $sessionId = session()->getId();
++
++    post(route('invitations.register', 'invitation-token'), [
++        'email' => 'different@example.com',
++        'email_verified_at' => null,
++        'first_name' => 'Alex',
++        'last_name' => 'Smith',
++        'password' => 'new-password',
++        'password_confirmation' => 'new-password',
++        'role' => MembershipRole::Owner->value,
++    ])->assertRedirect($destination === 'home' ? route('home') : route($destination, $invitation->organization))
++        ->assertSessionMissing('url.intended');
++
++    $user = User::query()->where('email', $invitation->email)->sole();
++    assertAuthenticatedAs($user);
++    assertDatabaseHas('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++    assertDatabaseMissing('users', ['email' => 'different@example.com']);
++    expect($user)->current_organization_id->toBe($invitation->organization_id)
++        ->first_name->toBe('Alex')->last_name->toBe('Smith')->hasVerifiedEmail()->toBeTrue()
++        ->and(Hash::check('new-password', $user->password))->toBeTrue()
++        ->and($invitation->fresh()->accepted_at)->toEqual(now())
++        ->and(session()->getId())->not->toBe($sessionId);
++    setPermissionsTeamId($invitation->organization_id);
++    expect($user->hasRole($role))->toBeTrue();
++    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::UserCreated->value
++        && $log->actor->id === (string) $user->id);
++    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
++        && $log->actor->id === (string) $user->id
++        && $log->tenantId === (string) $invitation->organization_id);
++})->with([
++    'admin' => [MembershipRole::Admin, 'organizations.settings.general'],
++    'viewer' => [MembershipRole::Viewer, 'home'],
++]);
+diff --git a/tests/Feature/Http/Controllers/InvitationSessionControllerTest.php b/tests/Feature/Http/Controllers/InvitationSessionControllerTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/Controllers/InvitationSessionControllerTest.php
+@@ -0,0 +1,35 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertGuest;
++use function Pest\Laravel\delete;
++use function Pest\Laravel\deleteJson;
++use function Pest\Laravel\get;
++use function Pest\Laravel\withSession;
++
++use App\Models\Invitation;
++
++it('requires authentication before signing out of an invitation session', function (): void {
++    deleteJson(route('invitations.session.destroy', 'invitation-token'))->assertUnauthorized();
++});
++
++it('signs out another account and returns to the same invitation', function (): void {
++    login();
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++    withSession(['_token' => 'old-token', 'private-data' => 'old-session', 'url.intended' => '/unrelated']);
++    $sessionId = session()->getId();
++
++    delete(route('invitations.session.destroy', 'invitation-token'))
++        ->assertRedirectToRoute('invitations.show', 'invitation-token')
++        ->assertSessionMissing('private-data')
++        ->assertSessionMissing('url.intended');
++
++    assertGuest();
++    expect(session()->getId())->not->toBe($sessionId)
++        ->and(session()->token())->not->toBe('old-token')
++        ->and($invitation->fresh()->accepted_at)->toBeNull();
++
++    get(route('invitations.show', 'invitation-token'))->assertOk()
++        ->assertSessionHas('url.intended', route('invitations.show', 'invitation-token'));
++});
+diff --git a/tests/Feature/Http/Responses/LoginResponseTest.php b/tests/Feature/Http/Responses/LoginResponseTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/Responses/LoginResponseTest.php
+@@ -0,0 +1,117 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertAuthenticatedAs;
++use function Pest\Laravel\get;
++use function Pest\Laravel\post;
++use function Pest\Laravel\postJson;
++use function Pest\Laravel\withSession;
++
++use App\Enums\MembershipRole;
++use App\Models\Invitation;
++use App\Models\Organization;
++use App\Models\User;
++use Inertia\Testing\AssertableInertia;
++
++it('redirects a browser login without an organization to onboarding', function (): void {
++    $user = User::factory()->createOne();
++
++    post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
++        ->assertRedirectToRoute('organizations.create');
++
++    assertAuthenticatedAs($user);
++});
++
++it('redirects a browser login into the current organization instead of an older membership', function (): void {
++    $user = User::factory()->createOne();
++    $organizations = Organization::factory()->count(2)->create();
++    $organization = $organizations->last();
++    $user->organizations()->attach($organizations);
++    $user->switchOrganization($organization);
++    $user->assignRole(MembershipRole::Admin);
++
++    post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
++        ->assertRedirectToRoute('organizations.settings.general', $organization);
++
++    assertAuthenticatedAs($user);
++    expect($user->fresh()->current_organization_id)->toBe($organization->id);
++});
++
++it('switches to the oldest membership when the current organization is missing', function (): void {
++    $user = User::factory()->createOne();
++    $organizations = Organization::factory()->count(2)->create();
++    $firstOrganization = $organizations->first();
++    $user->organizations()->attach($organizations);
++    setPermissionsTeamId($firstOrganization->id);
++    $user->assignRole(MembershipRole::Admin);
++
++    post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
++        ->assertRedirectToRoute('organizations.settings.general', $firstOrganization);
++
++    expect($user->fresh()->current_organization_id)->toBe($firstOrganization->id);
++});
++
++it('keeps viewers out of settings while selecting their organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = User::factory()->createOne();
++    $user->organizations()->attach($organization);
++
++    post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
++        ->assertRedirectToRoute('home');
++
++    expect($user->fresh()->current_organization_id)->toBe($organization->id);
++});
++
++it('honors an intended invitation URL after login', function (): void {
++    $user = User::factory()->createOne();
++    Invitation::factory()->withToken('invitation-token')->createOne(['email' => $user->email]);
++    get(route('invitations.show', 'invitation-token'))->assertOk();
++
++    post(route('login.store'), ['email' => $user->email, 'password' => 'password'])
++        ->assertRedirectToRoute('invitations.show', 'invitation-token')
++        ->assertSessionMissing('url.intended');
++});
++
++it('preserves the JSON login contract and intended URL', function (): void {
++    $user = User::factory()->createOne();
++    withSession(['url.intended' => route('organizations.create')]);
++
++    postJson(route('login.store'), ['email' => $user->email, 'password' => 'password'])
++        ->assertOk()->assertExactJson(['two_factor' => false])
++        ->assertSessionHas('url.intended', route('organizations.create'));
++
++    assertAuthenticatedAs($user);
++});
++
++it('redirects signed-in guests-only page visits to onboarding', function (string $path): void {
++    login();
++
++    get($path)->assertRedirectToRoute('organizations.create');
++})->with(['/login', '/register']);
++
++it('redirects signed-in guests-only page visits into the organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->assignRole(MembershipRole::Admin);
++
++    get('/login')->assertRedirectToRoute('organizations.settings.general', $organization);
++});
++
++it('continues email confirmation into organization onboarding', function (): void {
++    login();
++
++    get(route('verification.verified'))->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('continueUrl', route('organizations.create')));
++});
++
++it('continues email confirmation into an existing organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->assignRole(MembershipRole::Admin);
++
++    get(route('verification.verified'))->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('continueUrl', route('organizations.settings.general', $organization)));
++});

@@ -1,103 +1,944 @@
+diff --git a/app/Enums/EmailVerificationWarning.php b/app/Enums/EmailVerificationWarning.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/EmailVerificationWarning.php
+@@ -0,0 +1,15 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums;
++
++use ArchTech\Enums\Values;
++
++enum EmailVerificationWarning: string
++{
++    use Values;
++
++    case Expired = 'expired';
++    case OtherAccount = 'other_account';
++}
+diff --git a/app/Http/Controllers/EmailConfirmedController.php b/app/Http/Controllers/EmailConfirmedController.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Controllers/EmailConfirmedController.php
+@@ -0,0 +1,20 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Controllers;
++
++use App\Models\User;
++use Illuminate\Container\Attributes\CurrentUser;
++use Inertia\Inertia;
++use Inertia\Response;
++
++class EmailConfirmedController
++{
++    public function __invoke(#[CurrentUser] User $user): Response
++    {
++        return Inertia::render('auth/EmailConfirmed', [
++            'firstName' => $user->first_name,
++        ]);
++    }
++}
 diff --git a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifyServiceProvider.php
 --- a/app/Providers/FortifyServiceProvider.php
 +++ b/app/Providers/FortifyServiceProvider.php
-@@ -15,1 +15,2 @@
--use Illuminate\Support\Str;
-+use Illuminate\Support\Str;
+@@ -22,1 +22,3 @@
+-use Illuminate\Validation\ValidationException;
++use Illuminate\Validation\ValidationException;
 +use Inertia\Inertia;
-@@ -29,1 +30,9 @@
--        RateLimiter::for('login', function (Request $request) {
-+        Fortify::loginView(function () {
-+            return Inertia::render('auth/Login');
++use Inertia\Response;
+@@ -24,1 +26,2 @@
+-use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
++use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
++use Laravel\Fortify\Features;
+@@ -43,1 +46,36 @@
+-
++
++        Fortify::loginView(function (): Response {
++            return Inertia::render('auth/Login', [
++                'canRegister' => Features::enabled(Features::registration()),
++                'canResetPassword' => Features::enabled(Features::resetPasswords()),
++                'status' => session('status'),
++            ]);
 +        });
 +
-+        Fortify::verifyEmailView(function () {
-+            return Inertia::render('auth/VerifyEmail');
++        Fortify::registerView(fn (): Response => Inertia::render('auth/Register'));
++
++        Fortify::requestPasswordResetLinkView(function (): Response {
++            return Inertia::render('auth/ForgotPassword', [
++                'status' => session('status'),
++            ]);
 +        });
 +
-+        RateLimiter::for('login', function (Request $request) {
++        Fortify::resetPasswordView(function (Request $request): Response {
++            $token = $request->route('token');
++
++            abort_unless(is_string($token), 404);
++
++            return Inertia::render('auth/ResetPassword', [
++                'email' => $request->string(Fortify::email())->value(),
++                'token' => $token,
++            ]);
++        });
++
++        Fortify::verifyEmailView(function (Request $request): Response {
++            return Inertia::render('auth/VerifyEmail', [
++                'email' => $request->user()?->email,
++                'status' => session('status'),
++                'warning' => session('verification_warning'),
++            ]);
++        });
++
 diff --git a/bootstrap/app.php b/bootstrap/app.php
 --- a/bootstrap/app.php
 +++ b/bootstrap/app.php
-@@ -25,1 +25,2 @@
+@@ -4,1 +4,2 @@
+-
++
++use App\Enums\EmailVerificationWarning;
+@@ -7,1 +8,2 @@
+-use App\Http\Middleware\SetLocale;
++use App\Http\Middleware\SetLocale;
++use Illuminate\Auth\Access\AuthorizationException;
+@@ -10,1 +12,4 @@
+-use Illuminate\Foundation\Configuration\Middleware;
++use Illuminate\Foundation\Configuration\Middleware;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Http\Request;
++use Illuminate\Routing\Exceptions\InvalidSignatureException;
+@@ -12,1 +17,2 @@
+-use Sentry\Laravel\Integration;
++use Sentry\Laravel\Integration;
++use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+@@ -24,1 +30,2 @@
 -            ])
 +            ])
 +            ->redirectGuestsTo(fn (): string => route('login'))
+@@ -34,1 +41,21 @@
+-        Integration::handles($exceptions);
++        Integration::handles($exceptions);
++
++        $exceptions->render(function (InvalidSignatureException $exception, Request $request): null|RedirectResponse {
++            if ($request->routeIs('verification.verify')) {
++                return to_route('verification.notice')->with('verification_warning', EmailVerificationWarning::Expired);
++            }
++
++            return null;
++        });
++
++        $exceptions->render(function (AccessDeniedHttpException $exception, Request $request): null|RedirectResponse {
++            if ($request->routeIs('verification.verify') && $exception->getPrevious() instanceof AuthorizationException) {
++                if ($request->user()?->hasVerifiedEmail() === true) {
++                    return redirect(config()->string('fortify.home'));
++                }
++
++                return to_route('verification.notice')->with('verification_warning', EmailVerificationWarning::OtherAccount);
++            }
++
++            return null;
++        });
 diff --git a/config/fortify.php b/config/fortify.php
 --- a/config/fortify.php
 +++ b/config/fortify.php
-@@ -144,1 +144,1 @@
+@@ -83,3 +83,3 @@
+-        'email-verification' => '/',
+-        'logout' => '/',
+-        'register' => '/',
++        'email-verification' => '/email/verified',
++        'logout' => '/login',
++        'register' => '/email/verify',
+@@ -145,1 +145,1 @@
 -    'views' => false,
 +    'views' => true,
-diff --git a/resources/js/pages/auth/Login.tsx b/resources/js/pages/auth/Login.tsx
+diff --git a/resources/js/layouts/Auth.tsx b/resources/js/layouts/Auth.tsx
 new file mode 100644
 --- /dev/null
-+++ b/resources/js/pages/auth/Login.tsx
-@@ -0,0 +1,30 @@
-+import {Button, FieldError, Input, Label, TextField} from '@heroui/react'
++++ b/resources/js/layouts/Auth.tsx
+@@ -0,0 +1,61 @@
++import {Alert, Link} from '@heroui/react'
++import type {ReactNode} from 'react'
 +
-+import {store} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
-+import {Form} from '#/components/Form'
++export interface AuthLayoutProps {
++  accountLink?: {href: string; label: string}
++  accountText?: string
++  appName?: string
++  children?: ReactNode
++  heading?: string
++  lead?: string
++  logo?: ReactNode
++  secondaryLink?: {href: string; label: string}
++  status?: null | string
++}
 +
-+export default function Login() {
++export function Auth({
++  accountLink,
++  accountText,
++  appName = 'Template',
++  children,
++  heading,
++  lead,
++  logo,
++  secondaryLink,
++  status,
++}: AuthLayoutProps) {
 +  return (
-+    <div className="mx-auto max-w-sm">
-+      <Form action={store()} className="flex flex-col gap-y-4">
++    <div className="flex min-h-svh flex-col bg-background px-6 py-8 text-foreground">
++      <header className="mx-auto w-full max-w-sm">
++        <Link className="text-lg font-semibold text-foreground" href="/">
++          {logo ?? appName}
++        </Link>
++      </header>
++      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 py-12">
++        <div className="space-y-2">
++          <h1 className="text-2xl font-semibold">{heading}</h1>
++          {lead && <p className="text-sm text-muted">{lead}</p>}
++        </div>
++        {status && (
++          <Alert status="success">
++            <Alert.Indicator />
++            <Alert.Content>
++              <Alert.Title>{status}</Alert.Title>
++            </Alert.Content>
++          </Alert>
++        )}
++        {children}
++        {accountLink && (
++          <p className="text-sm text-muted">
++            {accountText && <>{accountText} </>}
++            <Link href={accountLink.href}>{accountLink.label}</Link>
++          </p>
++        )}
++        {secondaryLink && <Link href={secondaryLink.href}>{secondaryLink.label}</Link>}
++      </main>
++      <footer className="mx-auto w-full max-w-sm text-sm text-muted">
++        <Link href="/">Back to home</Link>
++      </footer>
++    </div>
++  )
++}
+diff --git a/resources/js/layouts/index.ts b/resources/js/layouts/index.ts
+--- a/resources/js/layouts/index.ts
++++ b/resources/js/layouts/index.ts
+@@ -3,1 +3,2 @@
+-import {App} from './App'
++import {App} from './App'
++import {Auth} from './Auth'
+@@ -9,1 +10,2 @@
+-  '': [Modal, App],
++  '': [Modal, App],
++  'auth/': [Modal, Auth],
+diff --git a/resources/js/pages/auth/EmailConfirmed.tsx b/resources/js/pages/auth/EmailConfirmed.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/EmailConfirmed.tsx
+@@ -0,0 +1,24 @@
++import {buttonVariants, Link} from '@heroui/react'
++import {Head, setLayoutProps} from '@inertiajs/react'
++
++import type {AuthLayoutProps} from '#/layouts/Auth'
++
++interface EmailConfirmedProps {
++  firstName: string
++}
++
++export default function EmailConfirmed({firstName}: EmailConfirmedProps) {
++  setLayoutProps<AuthLayoutProps>({
++    heading: 'Email confirmed',
++    lead: `Thank you, ${firstName}. Your email address is verified.`,
++  })
++
++  return (
++    <>
++      <Head title="Email confirmed" />
++      <Link className={buttonVariants({fullWidth: true})} href="/">
++        Continue
++      </Link>
++    </>
++  )
++}
+diff --git a/resources/js/pages/auth/ForgotPassword.tsx b/resources/js/pages/auth/ForgotPassword.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/ForgotPassword.tsx
+@@ -0,0 +1,40 @@
++import {Button, FieldError, Input, Label, TextField} from '@heroui/react'
++import {Head, setLayoutProps} from '@inertiajs/react'
++
++import {create as login} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
++import {store} from '#/actions/Laravel/Fortify/Http/Controllers/PasswordResetLinkController'
++import {Form} from '#/components/Form'
++import type {AuthLayoutProps} from '#/layouts/Auth'
++
++interface ForgotPasswordProps {
++  status: null | string
++}
++
++export default function ForgotPassword({status}: ForgotPasswordProps) {
++  setLayoutProps<AuthLayoutProps>({
++    accountLink: {href: login.url(), label: 'Back to sign in'},
++    heading: 'Forgot your password?',
++    lead: 'Enter your email to request a password reset link.',
++    status,
++  })
++
++  return (
++    <>
++      <Head title="Forgot your password?" />
++      <Form action={store()} className="flex flex-col gap-4" noValidate>
 +        {({processing}) => (
 +          <>
-+            <TextField isRequired name="email">
-+              <Label>Email Address</Label>
++            <TextField fullWidth isRequired name="email">
++              <Label>Email</Label>
 +              <Input autoComplete="email" inputMode="email" type="email" />
 +              <FieldError />
 +            </TextField>
-+            <TextField isRequired name="password">
-+              <Label>Password</Label>
-+              <Input autoComplete="current-password" type="password" />
-+              <FieldError />
-+            </TextField>
 +            <Button isPending={processing} type="submit">
-+              Sign In
++              Send link
 +            </Button>
 +          </>
 +        )}
 +      </Form>
-+    </div>
++    </>
++  )
++}
+diff --git a/resources/js/pages/auth/Login.tsx b/resources/js/pages/auth/Login.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/Login.tsx
+@@ -0,0 +1,58 @@
++import {Button, Checkbox, FieldError, Input, Label, Link, TextField} from '@heroui/react'
++import {Head, setLayoutProps} from '@inertiajs/react'
++
++import {store} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
++import {create as forgotPassword} from '#/actions/Laravel/Fortify/Http/Controllers/PasswordResetLinkController'
++import {create as register} from '#/actions/Laravel/Fortify/Http/Controllers/RegisteredUserController'
++import {Form} from '#/components/Form'
++import type {AuthLayoutProps} from '#/layouts/Auth'
++
++import {PasswordField} from './_components/PasswordField'
++
++interface LoginProps {
++  canRegister: boolean
++  canResetPassword: boolean
++  status: null | string
++}
++
++export default function Login({canRegister, canResetPassword, status}: LoginProps) {
++  setLayoutProps<AuthLayoutProps>({
++    accountLink: canRegister ? {href: register.url(), label: 'Create account'} : undefined,
++    accountText: canRegister ? 'Need an account?' : undefined,
++    heading: 'Sign in',
++    lead: 'Enter your email and password to continue.',
++    status,
++  })
++
++  return (
++    <>
++      <Head title="Sign in" />
++      <Form action={store()} className="flex flex-col gap-4" noValidate>
++        {({processing}) => (
++          <>
++            <TextField fullWidth isRequired name="email">
++              <Label>Email</Label>
++              <Input autoComplete="email" inputMode="email" type="email" />
++              <FieldError />
++            </TextField>
++            <PasswordField autoComplete="current-password" label="Password" name="password" />
++            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
++              <Checkbox name="remember" value="1">
++                <Checkbox.Content>
++                  <Checkbox.Control>
++                    <Checkbox.Indicator />
++                  </Checkbox.Control>
++                  Remember me
++                </Checkbox.Content>
++              </Checkbox>
++              {canResetPassword && <Link href={forgotPassword.url()}>Forgot your password?</Link>}
++            </div>
++            <Button isPending={processing} type="submit">
++              Sign in
++            </Button>
++          </>
++        )}
++      </Form>
++    </>
++  )
++}
+diff --git a/resources/js/pages/auth/Register.tsx b/resources/js/pages/auth/Register.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/Register.tsx
+@@ -0,0 +1,54 @@
++import {Button, FieldError, Input, Label, TextField} from '@heroui/react'
++import {Head, setLayoutProps} from '@inertiajs/react'
++
++import {create as login} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
++import {store} from '#/actions/Laravel/Fortify/Http/Controllers/RegisteredUserController'
++import {Form} from '#/components/Form'
++import type {AuthLayoutProps} from '#/layouts/Auth'
++
++import {PasswordField} from './_components/PasswordField'
++
++export default function Register() {
++  setLayoutProps<AuthLayoutProps>({
++    accountLink: {href: login.url(), label: 'Sign in'},
++    accountText: 'Already have an account?',
++    heading: 'Create account',
++    lead: 'Enter your details to get started.',
++  })
++
++  return (
++    <>
++      <Head title="Create account" />
++      <Form action={store()} className="flex flex-col gap-4" noValidate>
++        {({processing}) => (
++          <>
++            <TextField fullWidth isRequired name="first_name">
++              <Label>First name</Label>
++              <Input autoComplete="given-name" />
++              <FieldError />
++            </TextField>
++            <TextField fullWidth isRequired name="last_name">
++              <Label>Last name</Label>
++              <Input autoComplete="family-name" />
++              <FieldError />
++            </TextField>
++            <TextField fullWidth isRequired name="email">
++              <Label>Email</Label>
++              <Input autoComplete="email" inputMode="email" type="email" />
++              <FieldError />
++            </TextField>
++            <PasswordField autoComplete="new-password" label="Password" name="password" />
++            <PasswordField
++              autoComplete="new-password"
++              label="Confirm password"
++              name="password_confirmation"
++            />
++            <Button isPending={processing} type="submit">
++              Create account
++            </Button>
++          </>
++        )}
++      </Form>
++    </>
++  )
++}
+diff --git a/resources/js/pages/auth/ResetPassword.tsx b/resources/js/pages/auth/ResetPassword.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/ResetPassword.tsx
+@@ -0,0 +1,51 @@
++import {Button, FieldError, Input, Label, TextField} from '@heroui/react'
++import {Head, setLayoutProps} from '@inertiajs/react'
++
++import {create as login} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
++import {store} from '#/actions/Laravel/Fortify/Http/Controllers/NewPasswordController'
++import {create as requestLink} from '#/actions/Laravel/Fortify/Http/Controllers/PasswordResetLinkController'
++import {Form} from '#/components/Form'
++import type {AuthLayoutProps} from '#/layouts/Auth'
++
++import {PasswordField} from './_components/PasswordField'
++
++interface ResetPasswordProps {
++  email: string
++  token: string
++}
++
++export default function ResetPassword({email, token}: ResetPasswordProps) {
++  setLayoutProps<AuthLayoutProps>({
++    accountLink: {href: login.url(), label: 'Back to sign in'},
++    heading: 'Reset password',
++    lead: 'Choose a new password for your account.',
++    secondaryLink: {href: requestLink.url(), label: 'Request a new link'},
++  })
++
++  return (
++    <>
++      <Head title="Reset password" />
++      <Form action={store()} className="flex flex-col gap-4" noValidate>
++        {({processing}) => (
++          <>
++            <input name="token" type="hidden" value={token} />
++            <TextField fullWidth isRequired defaultValue={email} name="email">
++              <Label>Email</Label>
++              <Input autoComplete="email" inputMode="email" type="email" />
++              <FieldError />
++            </TextField>
++            <PasswordField autoComplete="new-password" label="New password" name="password" />
++            <PasswordField
++              autoComplete="new-password"
++              label="Confirm new password"
++              name="password_confirmation"
++            />
++            <Button isPending={processing} type="submit">
++              Reset password
++            </Button>
++          </>
++        )}
++      </Form>
++    </>
 +  )
 +}
 diff --git a/resources/js/pages/auth/VerifyEmail.tsx b/resources/js/pages/auth/VerifyEmail.tsx
 new file mode 100644
 --- /dev/null
 +++ b/resources/js/pages/auth/VerifyEmail.tsx
-@@ -0,0 +1,15 @@
-+import {Head} from '@inertiajs/react'
+@@ -0,0 +1,88 @@
++import {Alert, Button} from '@heroui/react'
++import {Head, setLayoutProps, usePage} from '@inertiajs/react'
 +
-+export default function VerifyEmail() {
++import {destroy} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
++import {store} from '#/actions/Laravel/Fortify/Http/Controllers/EmailVerificationNotificationController'
++import {Form} from '#/components/Form'
++import type {AuthLayoutProps} from '#/layouts/Auth'
++import type {EmailVerificationWarning} from '#/types/generated/enums'
++
++interface VerifyEmailProps {
++  email: string
++  status: null | string
++  warning: EmailVerificationWarning | null
++}
++
++const warnings: Record<EmailVerificationWarning, {description: string; title: string}> = {
++  expired: {
++    description: 'Request a new verification link to confirm your email address.',
++    title: 'This verification link has expired',
++  },
++  other_account: {
++    description: 'Sign out and open the link with the account it was sent to.',
++    title: 'This link belongs to another account',
++  },
++}
++
++export default function VerifyEmail({email, status, warning}: VerifyEmailProps) {
++  const {errors} = usePage().props
++  const message = warning ? warnings[warning] : null
++
++  setLayoutProps<AuthLayoutProps>({
++    heading: 'Verify your email',
++    lead: `Open the verification link in your inbox to confirm ${email}.`,
++    status: null,
++  })
++
 +  return (
 +    <>
-+      <Head title="Verify email" />
-+      <div className="mx-auto flex max-w-sm flex-col gap-2 text-center">
-+        <h1 className="text-xl font-semibold">Verify your email address</h1>
-+        <p className="text-foreground-500 text-sm">
-+          Check your inbox and follow the verification link to continue.
-+        </p>
++      <Head title="Verify your email" />
++      <div className="flex flex-col gap-4">
++        {message && (
++          <Alert status="warning">
++            <Alert.Indicator />
++            <Alert.Content>
++              <Alert.Title>{message.title}</Alert.Title>
++              <Alert.Description>{message.description}</Alert.Description>
++            </Alert.Content>
++          </Alert>
++        )}
++        {errors.verification ? (
++          <Alert status="danger">
++            <Alert.Indicator />
++            <Alert.Content>
++              <Alert.Title>{errors.verification}</Alert.Title>
++            </Alert.Content>
++          </Alert>
++        ) : status === 'verification-link-sent' ? (
++          <Alert status="success">
++            <Alert.Indicator />
++            <Alert.Content>
++              <Alert.Title>A new verification link has been sent to {email}.</Alert.Title>
++            </Alert.Content>
++          </Alert>
++        ) : null}
++        <Form action={store()}>
++          {({processing}) => (
++            <Button fullWidth isPending={processing} type="submit">
++              Resend link
++            </Button>
++          )}
++        </Form>
++        {!warning && (
++          <p className="text-sm text-muted">
++            Check your spam folder if the message has not arrived.
++          </p>
++        )}
++        <p className="text-sm text-muted">Signed in as {email}</p>
++        <Form action={destroy()}>
++          {({processing}) => (
++            <Button isPending={processing} type="submit" variant="ghost">
++              Sign out
++            </Button>
++          )}
++        </Form>
 +      </div>
 +    </>
 +  )
 +}
+diff --git a/resources/js/pages/auth/_components/PasswordField.tsx b/resources/js/pages/auth/_components/PasswordField.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/_components/PasswordField.tsx
+@@ -0,0 +1,37 @@
++import {faEye, faEyeSlash} from '@fortawesome/pro-regular-svg-icons'
++import {FontAwesomeIcon} from '@fortawesome/react-fontawesome'
++import {Button, FieldError, InputGroup, Label, TextField} from '@heroui/react'
++import {useState} from 'react'
++
++interface PasswordFieldProps {
++  autoComplete: 'current-password' | 'new-password'
++  label: string
++  name: string
++}
++
++export function PasswordField({autoComplete, label, name}: PasswordFieldProps) {
++  const [isVisible, setIsVisible] = useState(false)
++
++  return (
++    <TextField fullWidth isRequired name={name}>
++      <Label>{label}</Label>
++      <InputGroup fullWidth>
++        <InputGroup.Input autoComplete={autoComplete} type={isVisible ? 'text' : 'password'} />
++        <InputGroup.Suffix>
++          <Button
++            isIconOnly
++            aria-label={isVisible ? 'Hide password' : 'Show password'}
++            aria-pressed={isVisible}
++            onPress={() => setIsVisible(!isVisible)}
++            size="sm"
++            type="button"
++            variant="ghost"
++          >
++            <FontAwesomeIcon icon={isVisible ? faEyeSlash : faEye} />
++          </Button>
++        </InputGroup.Suffix>
++      </InputGroup>
++      <FieldError />
++    </TextField>
++  )
++}
+diff --git a/routes/web.php b/routes/web.php
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -4,1 +4,2 @@
+-
++
++use App\Http\Controllers\EmailConfirmedController;
+@@ -19,1 +20,3 @@
+-    Route::middleware('verified')->scopeBindings()->group(function (): void {
++    Route::middleware('verified')->scopeBindings()->group(function (): void {
++        Route::get('/email/verified', EmailConfirmedController::class)->name('verification.verified');
++
+diff --git a/tests/Browser/Auth/LoginTest.php b/tests/Browser/Auth/LoginTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Browser/Auth/LoginTest.php
+@@ -0,0 +1,73 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertAuthenticatedAs;
++use function Pest\Laravel\withSession;
++
++use App\Models\User;
++use Illuminate\Support\Facades\RateLimiter;
++
++it('shows the generic sign in page', function (): void {
++    visit('/login')
++        ->assertTitle('Sign in - Template')
++        ->assertSee('Enter your email and password to continue.')
++        ->assertSee('Remember me')
++        ->assertNoJavascriptErrors();
++});
++
++it('shows credential errors and keeps the form usable', function (): void {
++    $user = User::factory()->createOne();
++
++    visit('/login')
++        ->type('Email', $user->email)
++        ->type('Password', 'incorrect-password')
++        ->press('button[type="submit"]')
++        ->assertSee('These credentials do not match our records.')
++        ->assertValue('Email', $user->email)
++        ->assertValue('Password', 'incorrect-password')
++        ->type('Password', 'another-password')
++        ->assertValue('Password', 'another-password')
++        ->assertNoJavascriptErrors();
++});
++
++it('shows required errors for empty fields', function (): void {
++    visit('/login')->press('button[type="submit"]')
++        ->assertSee('The email field is required.')
++        ->assertSee('The password field is required.')
++        ->assertNoJavascriptErrors();
++});
++
++it('shows the password reset status', function (): void {
++    withSession(['status' => 'Your password has been reset.']);
++
++    visit('/login')->assertSee('Your password has been reset.')->assertNoJavascriptErrors();
++});
++
++it('shows lockout errors and keeps the sign in button enabled', function (): void {
++    $user = User::factory()->createOne();
++    $limiter = RateLimiter::limiter('login');
++    RateLimiter::shouldReceive('availableIn')->andReturn(42);
++    RateLimiter::shouldReceive('limiter')->with('login')->andReturn($limiter);
++    RateLimiter::shouldReceive('tooManyAttempts')->andReturnTrue();
++
++    visit('/login')
++        ->type('Email', $user->email)
++        ->type('Password', 'incorrect-password')
++        ->press('button[type="submit"]')
++        ->assertSee('Too many login attempts. Please try again in 42 seconds.')
++        ->assertValue('Password', 'incorrect-password')
++        ->assertEnabled('Sign in')
++        ->assertNoJavascriptErrors();
++});
++
++it('signs in with remember me and returns home', function (): void {
++    $user = User::factory()->createOne();
++
++    visit('/login')->type('Email', $user->email)->type('Password', 'password')
++        ->check('Remember me')->press('button[type="submit"]')->assertPathIs('/')
++        ->assertNoJavascriptErrors();
++
++    assertAuthenticatedAs($user);
++    expect($user->refresh()->remember_token)->not->toBeNull();
++});
+diff --git a/tests/Browser/Auth/PasswordResetTest.php b/tests/Browser/Auth/PasswordResetTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Browser/Auth/PasswordResetTest.php
+@@ -0,0 +1,63 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\User;
++use Illuminate\Auth\Notifications\ResetPassword;
++use Illuminate\Support\Facades\Hash;
++use Illuminate\Support\Facades\Notification;
++use Illuminate\Support\Facades\Password;
++
++it('opens password recovery from sign in', function (): void {
++    visit('/login')->click('Forgot your password?')->assertPathIs('/forgot-password')
++        ->assertSee('Enter your email to request a password reset link.')->assertNoJavascriptErrors();
++});
++
++it('shows the sent status after requesting a link', function (): void {
++    Notification::fake();
++    $user = User::factory()->createOne();
++
++    visit('/forgot-password')->type('Email', $user->email)->press('Send link')
++        ->assertSee('We have emailed your password reset link.')->assertNoJavascriptErrors();
++
++    Notification::assertSentTo($user, ResetPassword::class);
++});
++
++it('shows errors for an unknown account while retaining the email', function (): void {
++    visit('/forgot-password')->type('Email', 'missing@example.com')->press('Send link')
++        ->assertSee("We can't find an account with that email.")
++        ->assertValue('Email', 'missing@example.com')->assertNoJavascriptErrors();
++});
++
++it('resets the password and returns to sign in', function (): void {
++    $user = User::factory()->createOne();
++    $token = Password::createToken($user);
++
++    visit('/reset-password/'.$token.'?email='.urlencode($user->email))
++        ->assertValue('Email', $user->email)->type('New password', 'new-password-123')
++        ->type('Confirm new password', 'new-password-123')->press('button[type="submit"]')
++        ->assertPathIs('/login')->assertSee('Your password has been reset.')->assertNoJavascriptErrors();
++
++    expect(Hash::check('new-password-123', $user->refresh()->password))->toBeTrue()
++        ->and(Password::tokenExists($user, $token))->toBeFalse();
++});
++
++it('shows confirmation errors for the new password', function (): void {
++    $user = User::factory()->createOne();
++    $token = Password::createToken($user);
++
++    visit('/reset-password/'.$token.'?email='.urlencode($user->email))
++        ->type('New password', 'new-password-123')->type('Confirm new password', 'other-password')
++        ->press('button[type="submit"]')->assertSee('The password field confirmation does not match.')
++        ->assertNoJavascriptErrors();
++});
++
++it('offers another link after an invalid reset token', function (): void {
++    $user = User::factory()->createOne();
++
++    visit('/reset-password/invalid-token?email='.urlencode($user->email))
++        ->type('New password', 'new-password-123')->type('Confirm new password', 'new-password-123')
++        ->press('button[type="submit"]')
++        ->assertSee('This password reset link is invalid or has expired. Request a new one.')
++        ->click('Request a new link')->assertPathIs('/forgot-password')->assertNoJavascriptErrors();
++});
+diff --git a/tests/Browser/Auth/RegisterTest.php b/tests/Browser/Auth/RegisterTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Browser/Auth/RegisterTest.php
+@@ -0,0 +1,73 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertAuthenticated;
++
++use App\Models\User;
++use Illuminate\Auth\Notifications\VerifyEmail;
++use Illuminate\Support\Facades\Notification;
++use Illuminate\Support\Facades\Validator;
++
++it('opens registration from sign in', function (): void {
++    visit('/login')->click('Create account')->assertPathIs('/register')
++        ->assertSee('Enter your details to get started.')->assertNoJavascriptErrors();
++});
++
++it('shows and hides passwords independently without clearing values', function (): void {
++    visit('/register')->type('Password', 'new-password')->type('Confirm password', 'other-password')
++        ->click('role=button[name="Show password"] >> nth=0')
++        ->assertAttribute('password', 'type', 'text')
++        ->assertAttribute('password_confirmation', 'type', 'password')
++        ->click('role=button[name="Show password"]')
++        ->assertAttribute('password_confirmation', 'type', 'text')
++        ->click('role=button[name="Hide password"] >> nth=0')
++        ->assertAttribute('password', 'type', 'password')
++        ->click('role=button[name="Hide password"]')
++        ->assertAttribute('password_confirmation', 'type', 'password')
++        ->assertValue('Password', 'new-password')->assertValue('Confirm password', 'other-password')
++        ->assertNoJavascriptErrors();
++});
++
++it('shows email and short password errors while retaining details', function (): void {
++    Validator::fakeDnsLookups();
++
++    visit('/register')->type('First name', 'Alex')->type('Last name', 'Smith')
++        ->type('Email', 'alex@')->type('Password', 'short')->type('Confirm password', 'short')
++        ->press('button[type="submit"]')->assertSee('The email field must be a valid email address.')
++        ->assertSee('The password field must be at least 8 characters.')
++        ->assertValue('First name', 'Alex')->assertValue('Last name', 'Smith')
++        ->assertValue('Email', 'alex@')->assertValue('Password', 'short')
++        ->assertValue('Confirm password', 'short')->assertNoJavascriptErrors();
++});
++
++it('shows password mismatch errors without clearing passwords', function (): void {
++    Validator::fakeDnsLookups();
++    $user = User::factory()->makeOne();
++
++    visit('/register')->type('First name', 'Alex')->type('Last name', 'Smith')
++        ->type('Email', $user->email)->type('Password', 'new-password')
++        ->type('Confirm password', 'other-password')->press('button[type="submit"]')
++        ->assertSee('The password field confirmation does not match.')
++        ->assertValue('Password', 'new-password')->assertValue('Confirm password', 'other-password')
++        ->assertNoJavascriptErrors();
++});
++
++it('registers an account and sends verification links', function (): void {
++    Notification::fake();
++    Validator::fakeDnsLookups();
++    $user = User::factory()->makeOne();
++
++    visit('/register')->type('First name', 'Alex')->type('Last name', 'Smith')
++        ->type('Email', $user->email)->type('Password', 'new-password')
++        ->type('Confirm password', 'new-password')->press('button[type="submit"]')
++        ->assertPathIs('/email/verify')->assertSee('Verify your email')
++        ->assertSee('Signed in as '.$user->email)->press('Resend link')
++        ->assertSee('A new verification link has been sent to '.$user->email.'.')
++        ->assertNoJavascriptErrors();
++
++    assertAuthenticated();
++    expect(User::query()->sole())->first_name->toBe('Alex')->last_name->toBe('Smith');
++    Notification::assertSentTo(User::query()->sole(), VerifyEmail::class);
++    Notification::assertSentTimes(VerifyEmail::class, 2);
++});
+diff --git a/tests/Browser/Auth/VerifyEmailTest.php b/tests/Browser/Auth/VerifyEmailTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Browser/Auth/VerifyEmailTest.php
+@@ -0,0 +1,62 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertGuest;
++use function Pest\Laravel\withSession;
++
++use App\Enums\EmailVerificationWarning;
++use App\Models\User;
++use Illuminate\Auth\Notifications\VerifyEmail;
++use Illuminate\Support\Facades\Notification;
++use Illuminate\Support\Facades\RateLimiter;
++use Illuminate\Support\Facades\URL;
++
++it('shows the signed in email and resends verification', function (): void {
++    Notification::fake();
++    $user = login(User::factory()->unverified()->createOne(['email' => 'alex@example.com']));
++
++    visit('/email/verify')->assertSee('Verify your email')->assertSee('Signed in as alex@example.com')
++        ->press('Resend link')->assertSee('A new verification link has been sent to alex@example.com.')
++        ->assertNoJavascriptErrors();
++
++    Notification::assertSentTo($user, VerifyEmail::class);
++});
++
++it('shows resend limit errors and keeps the form usable', function (): void {
++    $limiter = RateLimiter::limiter('verification');
++    RateLimiter::shouldReceive('availableIn')->andReturn(60);
++    RateLimiter::shouldReceive('limiter')->with('verification')->andReturn($limiter);
++    RateLimiter::shouldReceive('tooManyAttempts')->andReturnTrue();
++    login(User::factory()->unverified()->createOne());
++
++    visit('/email/verify')->press('Resend link')->assertSee('Too many attempts. Try again in a minute.')
++        ->assertEnabled('Resend link')->assertNoJavascriptErrors();
++});
++
++it('shows verification warnings and lets the user sign out', function (EmailVerificationWarning $warning, string $message): void {
++    login(User::factory()->unverified()->createOne());
++    withSession(['verification_warning' => $warning->value]);
++
++    visit('/email/verify')->assertSee($message)->press('Sign out')->assertPathIs('/login')
++        ->assertSee('Enter your email and password to continue.')->assertNoJavascriptErrors();
++
++    assertGuest();
++})->with([
++    'expired' => [EmailVerificationWarning::Expired, 'This verification link has expired'],
++    'other account' => [EmailVerificationWarning::OtherAccount, 'This link belongs to another account'],
++]);
++
++it('verifies a signed link and continues home', function (): void {
++    $user = login(User::factory()->unverified()->createOne(['first_name' => 'Alex']));
++    $url = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
++        'hash' => sha1($user->email),
++        'id' => $user->id,
++    ]);
++
++    visit($url)->assertPathIs('/email/verified')->assertSee('Email confirmed')
++        ->assertSee('Thank you, Alex. Your email address is verified.')
++        ->click('Continue')->assertPathIs('/')->assertNoJavascriptErrors();
++
++    expect($user->refresh()->hasVerifiedEmail())->toBeTrue();
++});
 diff --git a/tests/Feature/Http/AuthenticationPagesTest.php b/tests/Feature/Http/AuthenticationPagesTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/AuthenticationPagesTest.php
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,205 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +use function Pest\Laravel\get;
 +
++use App\Enums\EmailVerificationWarning;
 +use App\Models\User;
++use Illuminate\Routing\Exceptions\InvalidSignatureException;
 +use Illuminate\Support\Facades\Route;
++use Illuminate\Support\Facades\URL;
 +use Inertia\Testing\AssertableInertia;
++use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 +
 +it('renders the login page for guests', function (): void {
 +    $response = get('/login');
@@ -134,3 +975,168 @@ new file mode 100644
 +
 +    $response->assertRedirect('/email/verify');
 +});
++
++it('passes login status and enabled features', function (): void {
++    $response = get('/login');
++
++    $response->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->component('auth/Login')
++        ->where('canRegister', true)
++        ->where('canResetPassword', true)
++        ->where('status', null));
++});
++
++it('passes disabled feature flags to login', function (): void {
++    config()->set('fortify.features', []);
++
++    get('/login')->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('canRegister', false)
++        ->where('canResetPassword', false));
++});
++
++it('passes session status to the login and forgot password views', function (string $path): void {
++    $this->withSession(['status' => 'Your password has been reset.']);
++
++    get($path)->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('status', 'Your password has been reset.'));
++})->with(['forgot password' => '/forgot-password', 'login' => '/login']);
++
++it('renders registration for guests', function (): void {
++    get('/register')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->component('auth/Register'));
++});
++
++it('renders the forgot password view', function (): void {
++    get('/forgot-password')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->component('auth/ForgotPassword')
++        ->where('status', null));
++});
++
++it('passes the reset token and email to the reset password view', function (): void {
++    get('/reset-password/example-token?email=alex%2Btest%40example.com')->assertOk()
++        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++            ->component('auth/ResetPassword')
++            ->where('email', 'alex+test@example.com')
++            ->where('token', 'example-token'));
++});
++
++it('renders a reset password view without an email', function (): void {
++    get('/reset-password/example-token')->assertOk()
++        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('email', ''));
++});
++
++it('passes the signed in email and empty verification status', function (): void {
++    login(User::factory()->unverified()->createOne(['email' => 'alex@example.com']));
++
++    get('/email/verify')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->component('auth/VerifyEmail')
++        ->where('email', 'alex@example.com')
++        ->where('status', null)
++        ->where('warning', null));
++});
++
++it('passes verification status and warnings', function (EmailVerificationWarning $warning): void {
++    login(User::factory()->unverified()->createOne());
++    $this->withSession([
++        'status' => 'verification-link-sent',
++        'verification_warning' => $warning,
++    ]);
++
++    get('/email/verify')->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->where('status', 'verification-link-sent')
++        ->where('warning', $warning->value));
++})->with(EmailVerificationWarning::cases());
++
++it('requires authentication for verification pages', function (string $path): void {
++    get($path)->assertRedirectToRoute('login');
++})->with(['confirmed' => '/email/verified', 'notice' => '/email/verify']);
++
++it('requires verified email before showing the confirmation page', function (): void {
++    login(User::factory()->unverified()->createOne());
++
++    get('/email/verified')->assertRedirectToRoute('verification.notice');
++});
++
++it('renders email confirmation with the signed in first name', function (): void {
++    login(User::factory()->createOne(['first_name' => 'Alex']));
++
++    get('/email/verified')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
++        ->component('auth/EmailConfirmed')
++        ->where('firstName', 'Alex'));
++});
++
++it('redirects a verified email to the confirmation page', function (): void {
++    $user = login(User::factory()->unverified()->createOne());
++    $url = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
++        'hash' => sha1($user->email),
++        'id' => $user->id,
++    ]);
++
++    get($url)->assertRedirect('/email/verified?verified=1');
++
++    expect($user->refresh()->hasVerifiedEmail())->toBeTrue();
++});
++
++it('redirects expired and invalid verification signatures to a warning', function (bool $expired): void {
++    $user = login(User::factory()->unverified()->createOne());
++    $url = URL::temporarySignedRoute('verification.verify', $expired ? now()->subMinute() : now()->addHour(), [
++        'hash' => sha1($user->email),
++        'id' => $user->id,
++    ]);
++
++    get($expired ? $url : $url.'tampered')->assertRedirectToRoute('verification.notice')
++        ->assertSessionHas('verification_warning', EmailVerificationWarning::Expired->value);
++
++    expect($user->refresh()->hasVerifiedEmail())->toBeFalse();
++})->with(['expired' => true, 'invalid' => false]);
++
++it('redirects another account verification link to a warning', function (string $mismatch): void {
++    $user = login(User::factory()->unverified()->createOne());
++    $url = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
++        'hash' => $mismatch === 'hash' ? sha1('other@example.com') : sha1($user->email),
++        'id' => $mismatch === 'id' ? $user->id + 1 : $user->id,
++    ]);
++
++    get($url)->assertRedirectToRoute('verification.notice')
++        ->assertSessionHas('verification_warning', EmailVerificationWarning::OtherAccount->value);
++
++    expect($user->refresh()->hasVerifiedEmail())->toBeFalse();
++})->with(['hash', 'id']);
++
++it('redirects verified users home when a link belongs to another account', function (): void {
++    $user = login();
++    $url = URL::temporarySignedRoute('verification.verify', now()->addHour(), [
++        'hash' => sha1('other@example.com'),
++        'id' => $user->id,
++    ]);
++
++    get($url)->assertRedirect('/')->assertSessionMissing('verification_warning');
++});
++
++it('keeps unrelated signature and authorization errors forbidden', function (string $exception): void {
++    Route::middleware('web')->get('/_test/forbidden', function () use ($exception): never {
++        throw new $exception();
++    });
++
++    get('/_test/forbidden')->assertForbidden()->assertSessionMissing('verification_warning');
++})->with([
++    'authorization' => AccessDeniedHttpException::class,
++    'signature' => InvalidSignatureException::class,
++]);
++
++it('redirects to login after signing out', function (): void {
++    login();
++
++    $this->post('/logout')->assertRedirect('/login');
++
++    $this->assertGuest();
++});
+diff --git a/tests/Feature/Http/PasswordResetTest.php b/tests/Feature/Http/PasswordResetTest.php
+--- a/tests/Feature/Http/PasswordResetTest.php
++++ b/tests/Feature/Http/PasswordResetTest.php
+@@ -25,1 +25,1 @@
+-it('sends a usable reset notification without registering a view route', function (): void {
++it('sends a usable reset notification for the reset password view', function (): void {
+@@ -32,1 +32,1 @@
+-    expect(Route::has('password.reset'))->toBeFalse();
++    expect(Route::has('password.reset'))->toBeTrue();

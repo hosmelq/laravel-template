@@ -1,6 +1,7 @@
 {
     "agents": [
-        "codex"
+        "codex",
+        "claude_code"
     ],
     "cloud": false,
     "guidelines": true,
@@ -8,13 +9,16 @@
     "nightwatch": false,
     "packages": [
         "fruitcake/laravel-debugbar",
-        "pestphp/pest-plugin-agent"
+        "pestphp/pest-plugin-agent",
+        "filament/filament"
     ],
     "sail": false,
     "skills": [
         "infer-conventions",
         "laravel-best-practices",
         "testing-best-practices",
+        "octane-development",
+        "filament-development",
         "debug-using-debugbar",
         "pest-plugin-agent"
     ]

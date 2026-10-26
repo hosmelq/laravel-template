@@ -4,7 +4,6 @@ rules:
       allow:
         - actions/*
         - hosmelq/.github/*
-        - jdx/mise-action
         - nubjs/setup-nub
         - pullfrog/pullfrog@v0
         - zizmorcore/zizmor-action

@@ -45,15 +45,20 @@ jobs:
           cp .env.testing.example .env.testing
           php artisan key:generate --env=testing
 
+      - name: Start PostgreSQL
+        env:
+          COMPOSE_DB_PORT: '5432'
+        run: docker compose up --detach --wait postgresql
+
       - name: Build Pest TIA baseline
-        run: ./scripts/test --ci --tia --fresh
+        run: vendor/bin/pest --ci --fresh --tia
 
       - name: Resolve Pest TIA baseline path
         id: baseline
         run: echo "path=$(./vendor/bin/pest --baseline)" >> "$GITHUB_OUTPUT"
 
       - name: Upload Pest TIA baseline
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           include-hidden-files: true
           if-no-files-found: error

@@ -34,9 +34,7 @@ class FeatureInstaller
 
         $this->applyPatches($patches);
 
-        $combinationPatches = $this->combinationPatches($features);
-
-        if ($combinationPatches !== []) {
+        foreach ($this->combinationPatches($features) as $combinationPatches) {
             $this->applyPatches($combinationPatches);
         }
 
@@ -67,28 +65,49 @@ class FeatureInstaller
     }
 
     /**
+     * Groups the combination patches of the selected features by size, smallest first.
+     *
+     * Each group is applied in its own pass because one `git apply` run cannot modify
+     * files that another patch in the same run creates.
+     *
      * @param list<TemplateFeature> $features
      *
-     * @return list<string>
+     * @return list<list<string>>
      */
     private function combinationPatches(array $features): array
     {
         $featureNames = array_column($features, 'value');
-        $combinationPatches = [];
+        $combinations = [[]];
 
         sort($featureNames);
 
-        foreach ($featureNames as $index => $firstFeatureName) {
-            foreach (array_slice($featureNames, $index + 1) as $secondFeatureName) {
-                $patch = resource_path(sprintf('template/patches/%s+%s.patch', $firstFeatureName, $secondFeatureName));
-
-                if (is_file($patch)) {
-                    $combinationPatches[] = $patch;
-                }
+        foreach ($featureNames as $featureName) {
+            foreach ($combinations as $combination) {
+                $combinations[] = [...$combination, $featureName];
             }
         }
 
-        return $combinationPatches;
+        $groups = [];
+
+        foreach ($combinations as $combination) {
+            if (count($combination) < 2) {
+                continue;
+            }
+
+            $patch = resource_path(sprintf('template/patches/%s.patch', implode('+', $combination)));
+
+            if (is_file($patch)) {
+                $groups[count($combination)][] = $patch;
+            }
+        }
+
+        ksort($groups);
+
+        return array_map(function (array $patches): array {
+            sort($patches);
+
+            return $patches;
+        }, array_values($groups));
     }
 
     private function deleteEmptyTemplateDirectories(): bool

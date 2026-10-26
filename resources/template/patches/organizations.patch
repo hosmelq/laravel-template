@@ -1,31 +1,147 @@
+diff --git a/app/Actions/Invitations/AcceptInvitation.php b/app/Actions/Invitations/AcceptInvitation.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Invitations/AcceptInvitation.php
+@@ -0,0 +1,46 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Actions\Invitations;
++
++use function HosmelQ\AuditLog\audit_log;
++
++use App\Enums\AuditLogEvent;
++use App\Models\Invitation;
++use App\Models\User;
++use Illuminate\Support\Arr;
++use Illuminate\Support\Facades\DB;
++
++class AcceptInvitation
++{
++    public function handle(User $user, Invitation $invitation): void
++    {
++        DB::transaction(function () use ($invitation, $user): void {
++            $invitation
++                ->organization
++                ->users()
++                ->syncWithoutDetaching([$user->id]);
++
++            $invitation->update([
++                'accepted_at' => now(),
++            ]);
++
++            $user->unsetRelation('organizations');
++
++            $user->switchOrganization($invitation->organization);
++            $user->assignRole($invitation->role);
++
++            /** @var array<string, null|bool|float|int|string> $before */
++            $before = Arr::only($invitation->getPrevious(), ['accepted_at']);
++            /** @var array<string, null|bool|float|int|string> $after */
++            $after = Arr::only($invitation->getChanges(), ['accepted_at']);
++
++            audit_log(AuditLogEvent::InvitationAccepted)
++                ->changes(before: $before, after: $after)
++                ->target($invitation)
++                ->tenant($invitation->organization_id)
++                ->record();
++        });
++    }
++}
 diff --git a/app/Actions/Organizations/CreateOrganization.php b/app/Actions/Organizations/CreateOrganization.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Organizations/CreateOrganization.php
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,42 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Actions\Organizations;
 +
++use function HosmelQ\AuditLog\audit_log;
++
 +use App\Actions\Organizations\Inputs\CreateOrganizationInput;
++use App\Enums\AuditLogEvent;
++use App\Enums\MembershipRole;
 +use App\Models\Organization;
 +use App\Models\User;
 +use Illuminate\Support\Facades\DB;
 +
 +class CreateOrganization
 +{
++    public function __construct(private readonly EnsureOrganizationRoles $ensureOrganizationRoles)
++    {
++    }
++
 +    public function handle(User $user, CreateOrganizationInput $input): Organization
 +    {
 +        return DB::transaction(function () use ($user, $input): Organization {
 +            $organization = $user->ownedOrganizations()->create($input->transform());
 +
++            $this->ensureOrganizationRoles->handle($organization);
++
 +            $organization->users()->attach($user);
 +
 +            $user->switchOrganization($organization);
++            $user->assignRole(MembershipRole::Owner);
++
++            audit_log(AuditLogEvent::OrganizationCreated)
++                ->target($organization)
++                ->tenant($organization->id)
++                ->record();
 +
 +            return $organization;
++        });
++    }
++}
+diff --git a/app/Actions/Organizations/EnsureOrganizationRoles.php b/app/Actions/Organizations/EnsureOrganizationRoles.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Organizations/EnsureOrganizationRoles.php
+@@ -0,0 +1,44 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Actions\Organizations;
++
++use App\Enums\MembershipPermission;
++use App\Enums\MembershipRole;
++use App\Models\Organization;
++use Illuminate\Support\Facades\DB;
++use Spatie\Permission\Models\Permission;
++use Spatie\Permission\Models\Role;
++use Spatie\Permission\PermissionRegistrar;
++
++class EnsureOrganizationRoles
++{
++    public function __construct(private readonly PermissionRegistrar $permissionRegistrar)
++    {
++    }
++
++    public function handle(Organization $organization): void
++    {
++        DB::transaction(function () use ($organization): void {
++            $this->permissionRegistrar->forgetCachedPermissions();
++
++            foreach (MembershipPermission::cases() as $permission) {
++                Permission::findOrCreate($permission, 'web');
++            }
++
++            $this->permissionRegistrar->forgetCachedPermissions();
++
++            foreach (MembershipRole::cases() as $membershipRole) {
++                $role = Role::query()
++                    ->firstOrCreate([
++                        'guard_name' => 'web',
++                        'name' => $membershipRole->value,
++                        'organization_id' => $organization->id,
++                    ]);
++
++                $role->syncPermissions($membershipRole->defaultPermissions());
++            }
 +        });
 +    }
 +}
@@ -80,85 +196,200 @@ diff --git a/app/Actions/Organizations/UpdateOrganization.php b/app/Actions/Orga
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Organizations/UpdateOrganization.php
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,36 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Actions\Organizations;
 +
++use function HosmelQ\AuditLog\audit_log;
++
 +use App\Actions\Organizations\Inputs\UpdateOrganizationInput;
++use App\Enums\AuditLogEvent;
 +use App\Models\Organization;
++use Illuminate\Support\Arr;
++use Illuminate\Support\Facades\DB;
 +
 +class UpdateOrganization
 +{
 +    public function handle(Organization $organization, UpdateOrganizationInput $input): Organization
 +    {
-+        $organization->update($input->transform());
++        return DB::transaction(function () use ($input, $organization): Organization {
++            $organization->update($input->transform());
 +
-+        return $organization;
++            /** @var array<string, null|bool|float|int|string> $before */
++            $before = Arr::except($organization->getPrevious(), 'updated_at');
++            /** @var array<string, null|bool|float|int|string> $after */
++            $after = Arr::except($organization->getChanges(), 'updated_at');
++
++            audit_log(AuditLogEvent::OrganizationUpdated)
++                ->changes(before: $before, after: $after)
++                ->target($organization)
++                ->tenant($organization->id)
++                ->record();
++
++            return $organization;
++        });
 +    }
 +}
-diff --git a/app/Enums/OrganizationRole.php b/app/Enums/OrganizationRole.php
+diff --git a/app/Enums/Concerns/Options.php b/app/Enums/Concerns/Options.php
 new file mode 100644
 --- /dev/null
-+++ b/app/Enums/OrganizationRole.php
-@@ -0,0 +1,30 @@
++++ b/app/Enums/Concerns/Options.php
+@@ -0,0 +1,32 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums\Concerns;
++
++use App\Enums\MetaProperties\TranslationKey;
++use ArchTech\Enums\Meta\Meta;
++use ArchTech\Enums\Metadata;
++use BackedEnum;
++use Illuminate\Support\Facades\Lang;
++
++/**
++ * @method string translationKey()
++ */
++#[Meta(TranslationKey::class)]
++trait Options
++{
++    use Metadata;
++
++    /**
++     * @return array<int, array{label: string, value: string}>
++     */
++    public static function options(): array
++    {
++        /** @var array<int, array{label: string, value: string}> */
++        return collect(static::cases())->map(fn (BackedEnum $case): array => [
++            'label' => Lang::string($case->translationKey()),
++            'value' => $case->value,
++        ])->all();
++    }
++}
+diff --git a/app/Enums/MembershipPermission.php b/app/Enums/MembershipPermission.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/MembershipPermission.php
+@@ -0,0 +1,37 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Enums;
 +
++use App\Enums\Concerns\Options;
++use App\Enums\MetaProperties\TranslationKey;
++use ArchTech\Enums\Comparable;
++use ArchTech\Enums\InvokableCases;
 +use ArchTech\Enums\Values;
-+use Illuminate\Support\Str;
 +
-+enum OrganizationRole: string
++/**
++ * @method static string SettingsOrganization()
++ * @method static string SettingsView()
++ * @method static string TeamManage()
++ * @method static string TeamView()
++ */
++enum MembershipPermission: string
 +{
++    use Comparable;
++    use InvokableCases;
++    use Options;
 +    use Values;
 +
-+    case Auditor = 'auditor';
-+    case OrganizationAdmin = 'organization-admin';
++    #[TranslationKey('membership.permissions.settings.organization')]
++    case SettingsOrganization = 'settings.organization';
++
++    #[TranslationKey('membership.permissions.settings.view')]
++    case SettingsView = 'settings.view';
++
++    #[TranslationKey('membership.permissions.team.manage')]
++    case TeamManage = 'team.manage';
++
++    #[TranslationKey('membership.permissions.team.view')]
++    case TeamView = 'team.view';
++}
+diff --git a/app/Enums/MembershipRole.php b/app/Enums/MembershipRole.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/MembershipRole.php
+@@ -0,0 +1,44 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums;
++
++use App\Enums\Concerns\Options;
++use App\Enums\MetaProperties\TranslationKey;
++use ArchTech\Enums\Comparable;
++use ArchTech\Enums\InvokableCases;
++use ArchTech\Enums\Values;
++
++/**
++ * @method static string Admin()
++ * @method static string Owner()
++ * @method static string Viewer()
++ */
++enum MembershipRole: string
++{
++    use Comparable;
++    use InvokableCases;
++    use Options;
++    use Values;
++
++    #[TranslationKey('membership.roles.admin')]
++    case Admin = 'admin';
++
++    #[TranslationKey('membership.roles.owner')]
++    case Owner = 'owner';
++
++    #[TranslationKey('membership.roles.viewer')]
++    case Viewer = 'viewer';
 +
 +    /**
-+     * @return array<int, Permission>
++     * @return list<MembershipPermission>
 +     */
-+    public function permissions(): array
++    public function defaultPermissions(): array
 +    {
 +        return match ($this) {
-+            self::Auditor => array_values(array_filter(
-+                Permission::cases(),
-+                static fn (Permission $permission): bool => Str::endsWith($permission->value, '.view'),
-+            )),
-+            self::OrganizationAdmin => Permission::cases(),
++            self::Admin, self::Owner => MembershipPermission::cases(),
++            self::Viewer => [],
 +        };
 +    }
 +}
-diff --git a/app/Enums/Permission.php b/app/Enums/Permission.php
+diff --git a/app/Enums/MetaProperties/TranslationKey.php b/app/Enums/MetaProperties/TranslationKey.php
 new file mode 100644
 --- /dev/null
-+++ b/app/Enums/Permission.php
-@@ -0,0 +1,15 @@
++++ b/app/Enums/MetaProperties/TranslationKey.php
+@@ -0,0 +1,19 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+namespace App\Enums;
++namespace App\Enums\MetaProperties;
 +
-+use ArchTech\Enums\Values;
++use ArchTech\Enums\Meta\MetaProperty;
++use Attribute;
++use Override;
 +
-+enum Permission: string
++#[Attribute]
++class TranslationKey extends MetaProperty
 +{
-+    use Values;
-+
-+    case OrganizationsUpdateSettings = 'organizations.update-settings';
-+    case OrganizationsView = 'organizations.view';
++    #[Override]
++    public static function method(): string
++    {
++        return 'translationKey';
++    }
 +}
 diff --git a/app/Http/Middleware/SetOrganizationPermissionContext.php b/app/Http/Middleware/SetOrganizationPermissionContext.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Http/Middleware/SetOrganizationPermissionContext.php
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,41 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -166,67 +397,38 @@ new file mode 100644
 +namespace App\Http\Middleware;
 +
 +use App\Models\Organization;
-+use App\Models\User;
 +use Closure;
-+use Illuminate\Contracts\Auth\Authenticatable;
 +use Illuminate\Http\Request;
-+use Illuminate\Routing\Route;
-+use Spatie\Permission\PermissionRegistrar;
 +use Symfony\Component\HttpFoundation\Response;
 +
 +class SetOrganizationPermissionContext
 +{
-+    public function __construct(private readonly PermissionRegistrar $permissionRegistrar)
-+    {
-+    }
-+
 +    /**
 +     * @param Closure(Request): (Response) $next
 +     */
 +    public function handle(Request $request, Closure $next): Response
 +    {
-+        $user = $request->user();
-+
-+        $this->forgetPermissionRelations($user);
-+        $this->permissionRegistrar->setPermissionsTeamId(null);
-+
 +        try {
-+            $route = $request->route();
-+            $organization = null;
++            $user = $request->user();
 +
-+            if ($route instanceof Route) {
-+                $organization = $route->parameter('organization');
-+
-+                if (is_string($organization)) {
-+                    $resolvedOrganization = new Organization()->resolveRouteBinding($organization);
-+
-+                    if ($resolvedOrganization instanceof Organization) {
-+                        $organization = $resolvedOrganization;
-+
-+                        $route->setParameter('organization', $organization);
-+                    }
-+                }
++            if ($user !== null && $user->current_organization_id === null && ($defaultOrganization = $user->defaultOrganization()) !== null) {
++                $user->switchOrganization($defaultOrganization);
 +            }
 +
-+            $this->permissionRegistrar->setPermissionsTeamId(
-+                $organization instanceof Organization ? $organization : null,
-+            );
++            $activeOrganization = $user?->currentOrganization;
++
++            setPermissionsTeamId($activeOrganization?->id);
++
++            $organization = $request->route('organization');
++
++            if ($user !== null && $organization instanceof Organization) {
++                abort_unless($user->isCurrentOrganization($organization), 403);
++            }
 +
 +            return $next($request);
 +        } finally {
-+            $this->permissionRegistrar->setPermissionsTeamId(null);
-+            $this->forgetPermissionRelations($user);
++            setPermissionsTeamId(null);
 +        }
-+    }
-+
-+    private function forgetPermissionRelations(null|Authenticatable $user): void
-+    {
-+        if (! $user instanceof User) {
-+            return;
-+        }
-+
-+        $user->unsetRelation('permissions');
-+        $user->unsetRelation('roles');
 +    }
 +}
 diff --git a/app/Http/Requests/StoreOrganizationRequest.php b/app/Http/Requests/StoreOrganizationRequest.php
@@ -319,6 +521,107 @@ new file mode 100644
 +        ];
 +    }
 +}
+diff --git a/app/Models/Invitation.php b/app/Models/Invitation.php
+new file mode 100644
+--- /dev/null
++++ b/app/Models/Invitation.php
+@@ -0,0 +1,96 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Models;
++
++use App\Enums\MembershipRole;
++use App\Models\Concerns\HasSqid;
++use Carbon\CarbonImmutable;
++use Database\Factories\InvitationFactory;
++use HosmelQ\AuditLog\Contracts\HasAuditLogIdentity;
++use HosmelQ\AuditLog\Support\AuditLogIdentity;
++use Illuminate\Database\Eloquent\Casts\Attribute;
++use Illuminate\Database\Eloquent\Factories\HasFactory;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++use Illuminate\Support\Facades\Date;
++use Illuminate\Support\Str;
++use Override;
++
++/**
++ * @property-read int $id
++ * @property-read int $invited_by_user_id
++ * @property-read int $organization_id
++ * @property-read null|CarbonImmutable $accepted_at
++ * @property-read string $email
++ * @property-read CarbonImmutable $expires_at
++ * @property-read MembershipRole $role
++ * @property-read string $token
++ * @property-read CarbonImmutable $created_at
++ * @property-read CarbonImmutable $updated_at
++ * @property-read User $invitedByUser
++ * @property-read Organization $organization
++ */
++class Invitation extends Model implements HasAuditLogIdentity
++{
++    /** @use HasFactory<InvitationFactory> */
++    use HasFactory;
++
++    use HasSqid;
++
++    public static function findByToken(string $token): null|self
++    {
++        return self::query()
++            ->where('token', hash('sha256', $token))
++            ->whereNull('accepted_at')
++            ->first();
++    }
++
++    public function auditLogIdentity(): AuditLogIdentity
++    {
++        return new AuditLogIdentity(
++            id: $this->id,
++            type: $this->getMorphClass(),
++        );
++    }
++
++    /**
++     * @return BelongsTo<User, $this>
++     */
++    public function invitedByUser(): BelongsTo
++    {
++        return $this->belongsTo(User::class, 'invited_by_user_id');
++    }
++
++    public function isExpired(): bool
++    {
++        return $this->expires_at->isBefore(Date::now());
++    }
++
++    /**
++     * @return BelongsTo<Organization, $this>
++     */
++    public function organization(): BelongsTo
++    {
++        return $this->belongsTo(Organization::class);
++    }
++
++    #[Override]
++    protected function casts(): array
++    {
++        return [
++            'accepted_at' => 'datetime',
++            'expires_at' => 'datetime',
++            'role' => MembershipRole::class,
++        ];
++    }
++
++    /**
++     * @return Attribute<string, string>
++     */
++    protected function email(): Attribute
++    {
++        return Attribute::make(set: fn (string $value): string => Str::lower($value));
++    }
++}
 diff --git a/app/Models/Membership.php b/app/Models/Membership.php
 new file mode 100644
 --- /dev/null
@@ -342,7 +645,7 @@ diff --git a/app/Models/Organization.php b/app/Models/Organization.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Models/Organization.php
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,66 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -352,6 +655,8 @@ new file mode 100644
 +use App\Models\Concerns\HasSqid;
 +use Carbon\CarbonImmutable;
 +use Database\Factories\OrganizationFactory;
++use HosmelQ\AuditLog\Contracts\HasAuditLogIdentity;
++use HosmelQ\AuditLog\Support\AuditLogIdentity;
 +use Illuminate\Database\Eloquent\Attributes\RouteKey;
 +use Illuminate\Database\Eloquent\Collection;
 +use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -373,12 +678,20 @@ new file mode 100644
 + */
 +#[RouteKey('slug')]
 +#[Sluggable(from: 'name', to: 'slug', onUpdate: false)]
-+class Organization extends Model
++class Organization extends Model implements HasAuditLogIdentity
 +{
 +    /** @use HasFactory<OrganizationFactory> */
 +    use HasFactory;
 +
 +    use HasSqid;
++
++    public function auditLogIdentity(): AuditLogIdentity
++    {
++        return new AuditLogIdentity(
++            id: $this->id,
++            type: $this->getMorphClass(),
++        );
++    }
 +
 +    /**
 +     * @return BelongsTo<User, $this>
@@ -402,31 +715,27 @@ new file mode 100644
 diff --git a/app/Models/User.php b/app/Models/User.php
 --- a/app/Models/User.php
 +++ b/app/Models/User.php
-@@ -7,1 +7,2 @@
--use App\Models\Concerns\HasSqid;
-+use App\Enums\Permission;
-+use App\Models\Concerns\HasSqid;
-@@ -13,1 +14,2 @@
--use Illuminate\Database\Eloquent\Attributes\Hidden;
-+use Illuminate\Database\Eloquent\Attributes\Hidden;
+@@ -18,1 +18,2 @@
+-use Illuminate\Database\Eloquent\Casts\Attribute;
++use Illuminate\Database\Eloquent\Casts\Attribute;
 +use Illuminate\Database\Eloquent\Collection;
-@@ -14,1 +16,4 @@
+@@ -19,1 +20,4 @@
 -use Illuminate\Database\Eloquent\Factories\HasFactory;
 +use Illuminate\Database\Eloquent\Factories\HasFactory;
 +use Illuminate\Database\Eloquent\Relations\BelongsTo;
 +use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 +use Illuminate\Database\Eloquent\Relations\HasMany;
-@@ -18,1 +23,4 @@
+@@ -24,1 +28,4 @@
 -use Override;
 +use Override;
 +use Spatie\Permission\Models\Permission as PermissionModel;
 +use Spatie\Permission\Models\Role as RoleModel;
 +use Spatie\Permission\Traits\HasRoles;
-@@ -22,1 +30,2 @@
+@@ -28,1 +35,2 @@
 - * @property-read string $sqid
 + * @property-read string $sqid
 + * @property-read null|int $current_organization_id
-@@ -31,1 +40,6 @@
+@@ -37,1 +45,6 @@
 - * @property-read PersonName $name
 + * @property-read PersonName $name
 + * @property-read null|Organization $currentOrganization
@@ -434,12 +743,13 @@ diff --git a/app/Models/User.php b/app/Models/User.php
 + * @property-read Collection<int, Organization> $ownedOrganizations
 + * @property-read Collection<int, PermissionModel> $permissions
 + * @property-read Collection<int, RoleModel> $roles
-@@ -39,1 +53,2 @@
--    use HasSqid;
+@@ -44,1 +57,2 @@
+-
++
 +    use HasRoles;
-+    use HasSqid;
-@@ -42,1 +57,39 @@
--    public function isAdmin(): bool
+@@ -56,1 +70,14 @@
+-
++
 +    public function belongsToOrganization(null|Organization $organization): bool
 +    {
 +        if (! $organization instanceof Organization) {
@@ -453,34 +763,28 @@ diff --git a/app/Models/User.php b/app/Models/User.php
 +        return $this->organizations->contains($organization);
 +    }
 +
-+    public function canInOrganization(Organization $organization, Permission $permission): bool
-+    {
-+        if (getPermissionsTeamId() !== $organization->getKey()) {
-+            return false;
-+        }
-+
-+        if (! $this->organizations()->whereKey($organization)->exists()) {
-+            return false;
-+        }
-+
-+        return $this->ownsOrganization($organization) || $this->can($permission);
-+    }
+@@ -61,1 +88,17 @@
+-
 +
 +    /**
 +     * @return BelongsTo<Organization, $this>
 +     */
 +    public function currentOrganization(): BelongsTo
 +    {
-+        if ($this->current_organization_id === null && ($organization = $this->organizations->first()) !== null) {
-+            $this->switchOrganization($organization);
-+        }
-+
 +        return $this->belongsTo(Organization::class, 'current_organization_id');
 +    }
 +
-+    public function isAdmin(): bool
-@@ -47,1 +100,53 @@
--    #[Override]
++    public function defaultOrganization(): null|Organization
++    {
++        return $this->currentOrganization ?? $this->organizations()
++            ->oldest('organization_user.created_at')
++            ->oldest('organization_user.id')
++            ->first();
++    }
++
+@@ -66,1 +109,58 @@
+-
++
 +    public function isCurrentOrganization(Organization $organization): bool
 +    {
 +        if ($this->currentOrganization === null) {
@@ -530,22 +834,26 @@ diff --git a/app/Models/User.php b/app/Models/User.php
 +
 +        $this->setRelation('currentOrganization', $organization);
 +
++        setPermissionsTeamId($organization->id);
++
++        $this->unsetRelation('permissions')
++            ->unsetRelation('roles');
++
 +        return true;
 +    }
 +
-+    #[Override]
 diff --git a/app/Policies/OrganizationPolicy.php b/app/Policies/OrganizationPolicy.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Policies/OrganizationPolicy.php
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,29 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Policies;
 +
-+use App\Enums\Permission;
++use App\Enums\MembershipPermission;
 +use App\Models\Organization;
 +use App\Models\User;
 +
@@ -558,64 +866,33 @@ new file mode 100644
 +
 +    public function update(User $user, Organization $organization): bool
 +    {
-+        return $user->canInOrganization($organization, Permission::OrganizationsUpdateSettings);
++        return $user->belongsToOrganization($organization)
++            && $user->can(MembershipPermission::SettingsOrganization);
 +    }
 +
 +    public function view(User $user, Organization $organization): bool
 +    {
-+        return $user->canInOrganization($organization, Permission::OrganizationsView);
++        return $user->belongsToOrganization($organization)
++            && $user->can(MembershipPermission::SettingsView);
 +    }
 +}
-diff --git a/app/Support/OrganizationPermissionContext.php b/app/Support/OrganizationPermissionContext.php
-new file mode 100644
---- /dev/null
-+++ b/app/Support/OrganizationPermissionContext.php
-@@ -0,0 +1,45 @@
-+<?php
-+
-+declare(strict_types=1);
-+
-+namespace App\Support;
-+
+diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
+--- a/app/Providers/AppServiceProvider.php
++++ b/app/Providers/AppServiceProvider.php
+@@ -7,1 +7,3 @@
+-use App\Models\User;
++use App\Models\Invitation;
 +use App\Models\Organization;
 +use App\Models\User;
-+use Closure;
-+use Spatie\Permission\PermissionRegistrar;
-+
-+class OrganizationPermissionContext
-+{
-+    public function __construct(private readonly PermissionRegistrar $permissionRegistrar)
-+    {
-+    }
-+
-+    /**
-+     * @template TReturn
-+     *
-+     * @param Closure(): TReturn $callback
-+     *
-+     * @return TReturn
-+     */
-+    public function run(User $user, Organization $organization, Closure $callback): mixed
-+    {
-+        $previousTeamId = $this->permissionRegistrar->getPermissionsTeamId();
-+
-+        $this->permissionRegistrar->setPermissionsTeamId($organization);
-+        $this->forgetPermissionRelations($user);
-+
-+        try {
-+            return $callback();
-+        } finally {
-+            $this->permissionRegistrar->setPermissionsTeamId($previousTeamId);
-+            $this->forgetPermissionRelations($user);
-+        }
-+    }
-+
-+    private function forgetPermissionRelations(User $user): void
-+    {
-+        $user->unsetRelation('permissions');
-+        $user->unsetRelation('roles');
-+    }
-+}
+@@ -45,1 +47,2 @@
+-        AuditLogContext::resolveActorUsing(fn (): null|User => Auth::user());
++        AuditLogContext::resolveActorUsing(fn (): null|User => Auth::user());
++        AuditLogContext::resolveTenantUsing(fn (): null|int => Auth::user()?->current_organization_id);
+@@ -78,1 +81,3 @@
+-        Relation::enforceMorphMap([
++        Relation::enforceMorphMap([
++            'invitation' => Invitation::class,
++            'organization' => Organization::class,
 diff --git a/boost.json b/boost.json
 --- a/boost.json
 +++ b/boost.json
@@ -632,21 +909,13 @@ diff --git a/boost.json b/boost.json
 diff --git a/bootstrap/app.php b/bootstrap/app.php
 --- a/bootstrap/app.php
 +++ b/bootstrap/app.php
-@@ -7,1 +7,2 @@
+@@ -6,1 +6,2 @@
 -use Illuminate\Foundation\Application;
 +use App\Http\Middleware\SetOrganizationPermissionContext;
 +use Illuminate\Foundation\Application;
-@@ -9,1 +10,2 @@
--use Illuminate\Foundation\Configuration\Middleware;
-+use Illuminate\Foundation\Configuration\Middleware;
-+use Illuminate\Routing\Middleware\SubstituteBindings;
-@@ -24,1 +26,8 @@
+@@ -22,1 +23,4 @@
 -            ->redirectUsersTo('/')
 +            ->redirectUsersTo('/')
-+            ->prependToPriorityList(
-+                SubstituteBindings::class,
-+                SetOrganizationPermissionContext::class,
-+            )
 +            ->web(append: [
 +                SetOrganizationPermissionContext::class,
 +            ])
@@ -654,8 +923,8 @@ diff --git a/composer.json b/composer.json
 --- a/composer.json
 +++ b/composer.json
 @@ -24,1 +24,4 @@
--    "sentry/sentry-laravel": "^4.28.0",
-+    "sentry/sentry-laravel": "^4.28.0",
+-    "sentry/sentry-laravel": "^4.29.0",
++    "sentry/sentry-laravel": "^4.29.0",
 +    "spatie/laravel-data": "^4.23",
 +    "spatie/laravel-permission": "^8.3.2",
 +    "spatie/laravel-sluggable": "^4.0.3",
@@ -886,17 +1155,89 @@ new file mode 100644
 +        'store' => 'default',
 +    ],
 +];
-diff --git a/database/factories/OrganizationFactory.php b/database/factories/OrganizationFactory.php
+diff --git a/database/factories/InvitationFactory.php b/database/factories/InvitationFactory.php
 new file mode 100644
 --- /dev/null
-+++ b/database/factories/OrganizationFactory.php
-@@ -0,0 +1,25 @@
++++ b/database/factories/InvitationFactory.php
+@@ -0,0 +1,66 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace Database\Factories;
 +
++use App\Enums\MembershipRole;
++use App\Models\Invitation;
++use App\Models\Organization;
++use Illuminate\Database\Eloquent\Factories\Factory;
++use Illuminate\Support\Str;
++
++/**
++ * @extends Factory<Invitation>
++ */
++class InvitationFactory extends Factory
++{
++    public function accepted(): static
++    {
++        return $this->state([
++            'accepted_at' => now(),
++        ]);
++    }
++
++    public function definition(): array
++    {
++        return [
++            'organization_id' => Organization::factory(),
++            'invited_by_user_id' => $this->invitedByUserIdFor(...),
++
++            'accepted_at' => null,
++            'email' => fake()
++                ->unique()
++                ->regexify('\w{8}@example\.com'),
++            'expires_at' => now()
++                ->addDays(7),
++            'role' => MembershipRole::Viewer,
++            'token' => hash('sha256', Str::random(40)),
++        ];
++    }
++
++    public function expired(): static
++    {
++        return $this->state([
++            'expires_at' => now()
++                ->subDay(),
++        ]);
++    }
++
++    public function withToken(string $token): static
++    {
++        return $this->state([
++            'token' => hash('sha256', $token),
++        ]);
++    }
++
++    /**
++     * @param array{organization_id: int} $attributes
++     */
++    private function invitedByUserIdFor(array $attributes): int
++    {
++        return Organization::query()
++            ->findOrFail($attributes['organization_id'])
++            ->owner_id;
++    }
++}
+diff --git a/database/factories/OrganizationFactory.php b/database/factories/OrganizationFactory.php
+new file mode 100644
+--- /dev/null
++++ b/database/factories/OrganizationFactory.php
+@@ -0,0 +1,33 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Database\Factories;
++
++use App\Actions\Organizations\EnsureOrganizationRoles;
 +use App\Models\Organization;
 +use App\Models\User;
 +use Illuminate\Database\Eloquent\Factories\Factory;
@@ -906,6 +1247,13 @@ new file mode 100644
 + */
 +class OrganizationFactory extends Factory
 +{
++    public function configure(): static
++    {
++        return $this->afterCreating(function (Organization $organization): void {
++            resolve(EnsureOrganizationRoles::class)->handle($organization);
++        });
++    }
++
 +    public function definition(): array
 +    {
 +        return [
@@ -1012,7 +1360,7 @@ diff --git a/database/migrations/2026_08_28_133759_create_permission_tables.php 
 new file mode 100644
 --- /dev/null
 +++ b/database/migrations/2026_08_28_133759_create_permission_tables.php
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,136 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1021,7 +1369,6 @@ new file mode 100644
 +use Illuminate\Database\Migrations\Migration;
 +use Illuminate\Database\Schema\Blueprint;
 +use Illuminate\Support\Facades\Config;
-+use Illuminate\Support\Facades\DB;
 +use Illuminate\Support\Facades\Schema;
 +
 +return new class () extends Migration {
@@ -1071,19 +1418,6 @@ new file mode 100644
 +                $table->unique(['name', 'guard_name']);
 +            }
 +        });
-+
-+        $grammar = DB::connection()->getQueryGrammar();
-+        $guardNameColumn = $grammar->wrap('guard_name');
-+        $indexName = $grammar->wrap('roles_global_name_guard_name_unique');
-+        $nameColumn = $grammar->wrap('name');
-+        $rolesTable = $grammar->wrapTable($tableNames['roles']);
-+        $teamForeignKey = $grammar->wrap($columnNames['team_foreign_key']);
-+
-+        DB::statement(<<<SQL
-+            CREATE UNIQUE INDEX {$indexName}
-+            ON {$rolesTable} ({$nameColumn}, {$guardNameColumn})
-+            WHERE {$teamForeignKey} IS NULL
-+        SQL);
 +
 +        Schema::create($tableNames['model_has_permissions'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotPermission, $teams): void {
 +            $table->unsignedBigInteger($pivotPermission);
@@ -1163,24 +1497,54 @@ new file mode 100644
 +            ->forget(Config::string('permission.cache.key'));
 +    }
 +};
-diff --git a/database/seeders/DatabaseSeeder.php b/database/seeders/DatabaseSeeder.php
---- a/database/seeders/DatabaseSeeder.php
-+++ b/database/seeders/DatabaseSeeder.php
-@@ -15,1 +15,2 @@
--    {
+diff --git a/database/migrations/2026_10_10_204904_create_invitations_table.php b/database/migrations/2026_10_10_204904_create_invitations_table.php
+new file mode 100644
+--- /dev/null
++++ b/database/migrations/2026_10_10_204904_create_invitations_table.php
+@@ -0,0 +1,27 @@
++<?php
++
++declare(strict_types=1);
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++return new class () extends Migration {
++    public function up(): void
 +    {
-+        $this->call(RolesAndPermissionsSeeder::class);
++        Schema::create('invitations', function (Blueprint $table): void {
++            $table->id();
++
++            $table->foreignId('invited_by_user_id')->index();
++            $table->foreignId('organization_id')->index();
++
++            $table->timestamp('accepted_at')->nullable();
++            $table->string('email');
++            $table->timestamp('expires_at');
++            $table->string('role');
++            $table->string('token')->unique();
++
++            $table->timestamps();
++        });
++    }
++};
 diff --git a/database/seeders/LocalSeeder.php b/database/seeders/LocalSeeder.php
 --- a/database/seeders/LocalSeeder.php
 +++ b/database/seeders/LocalSeeder.php
-@@ -7,1 +7,2 @@
--use App\Models\User;
+@@ -6,1 +6,4 @@
+-
++
++use App\Actions\Organizations\EnsureOrganizationRoles;
++use App\Enums\MembershipRole;
 +use App\Models\Organization;
-+use App\Models\User;
-@@ -14,1 +15,1 @@
+@@ -12,1 +15,1 @@
+-    public function run(): void
++    public function run(EnsureOrganizationRoles $ensureOrganizationRoles): void
+@@ -14,1 +17,1 @@
 -        User::factory()->createOne([
 +        $user = User::factory()->createOne([
-@@ -18,1 +19,9 @@
+@@ -18,1 +21,15 @@
 -        ]);
 +        ]);
 +
@@ -1191,57 +1555,38 @@ diff --git a/database/seeders/LocalSeeder.php b/database/seeders/LocalSeeder.php
 +            ->create();
 +
 +        $user->organizations()->sync($organizations);
-diff --git a/database/seeders/RolesAndPermissionsSeeder.php b/database/seeders/RolesAndPermissionsSeeder.php
++
++        foreach ($organizations as $organization) {
++            $ensureOrganizationRoles->handle($organization);
++            $user->switchOrganization($organization);
++            $user->assignRole(MembershipRole::Owner);
++        }
+diff --git a/lang/en/membership.php b/lang/en/membership.php
 new file mode 100644
 --- /dev/null
-+++ b/database/seeders/RolesAndPermissionsSeeder.php
-@@ -0,0 +1,46 @@
++++ b/lang/en/membership.php
+@@ -0,0 +1,21 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+namespace Database\Seeders;
-+
-+use App\Enums\OrganizationRole;
-+use App\Enums\Permission;
-+use Illuminate\Database\Seeder;
-+use Spatie\Permission\Models\Permission as PermissionModel;
-+use Spatie\Permission\Models\Role as RoleModel;
-+use Spatie\Permission\PermissionRegistrar;
-+
-+class RolesAndPermissionsSeeder extends Seeder
-+{
-+    private const string GUARD_NAME = 'web';
-+
-+    public function run(PermissionRegistrar $permissionRegistrar): void
-+    {
-+        $previousTeamId = $permissionRegistrar->getPermissionsTeamId();
-+
-+        try {
-+            $permissionRegistrar->setPermissionsTeamId(null);
-+            $permissionRegistrar->forgetCachedPermissions();
-+
-+            foreach (Permission::cases() as $permission) {
-+                PermissionModel::findOrCreate($permission, self::GUARD_NAME);
-+            }
-+
-+            foreach (OrganizationRole::cases() as $role) {
-+                RoleModel::findOrCreate($role, self::GUARD_NAME);
-+
-+                $globalRole = RoleModel::query()
-+                    ->where('guard_name', self::GUARD_NAME)
-+                    ->where('name', $role->value)
-+                    ->whereNull($permissionRegistrar->teamsKey)
-+                    ->sole();
-+
-+                $globalRole->syncPermissions($role->permissions());
-+            }
-+        } finally {
-+            $permissionRegistrar->setPermissionsTeamId($previousTeamId);
-+            $permissionRegistrar->forgetCachedPermissions();
-+        }
-+    }
-+}
++return [
++    'permissions' => [
++        'settings' => [
++            'organization' => 'Change organization settings',
++            'view' => 'View settings',
++        ],
++        'team' => [
++            'manage' => 'Manage the team',
++            'view' => 'View the team',
++        ],
++    ],
++    'roles' => [
++        'admin' => 'Admin',
++        'owner' => 'Owner',
++        'viewer' => 'Viewer',
++    ],
++];
 diff --git a/lang/en/organization.php b/lang/en/organization.php
 new file mode 100644
 --- /dev/null
@@ -1262,156 +1607,313 @@ new file mode 100644
 +    ],
 +
 +];
+diff --git a/tests/ArchitectureTest.php b/tests/ArchitectureTest.php
+--- a/tests/ArchitectureTest.php
++++ b/tests/ArchitectureTest.php
+@@ -6,1 +6,1 @@
+-arch()->preset()->laravel();
++arch()->preset()->laravel()->ignoring('App\Enums\MetaProperties');
 diff --git a/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.php b/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.php
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,297 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+use function Pest\Laravel\get;
++use function Pest\Laravel\assertDatabaseHas;
++use function Pest\Laravel\getJson;
 +
-+use App\Enums\Permission;
 +use App\Models\Organization;
++use App\Models\User;
 +use Illuminate\Support\Facades\Exceptions;
 +use Illuminate\Support\Facades\Route;
 +
-+it('clears existing permission context for requests without an organization', function (): void {
-+    Route::middleware('web')
-+        ->get('/_test/without-organization', fn (): array => [
-+            'organization_id' => getPermissionsTeamId(),
-+        ]);
++it('uses the active organization and clears the team after the request', function (): void {
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
 +
++    login($user);
++
++    Route::middleware('web')
++        ->get('/_test/permission-context', fn (): array => ['team_id' => getPermissionsTeamId()]);
++
++    $response = getJson('/_test/permission-context');
++
++    $response->assertExactJson(['team_id' => $user->current_organization_id]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull();
++});
++
++it('assigns the first organization and its permission team when no organization is active', function (): void {
++    $user = User::factory()
++        ->has(
++            Organization::factory()
++                ->count(2),
++            'organizations',
++        )
++        ->createOne();
++    $organization = $user->organizations->first();
++
++    $user->load('currentOrganization');
++    login($user);
 +    setPermissionsTeamId(123);
 +
-+    $response = get('/_test/without-organization');
++    Route::middleware('web')
++        ->get('/_test/permission-context', fn (): array => ['team_id' => getPermissionsTeamId()]);
 +
-+    $response->assertExactJson([
-+        'organization_id' => null,
++    $response = getJson('/_test/permission-context');
++
++    $response->assertExactJson(['team_id' => $organization->id]);
++
++    expect($user->currentOrganization)
++        ->is($organization)
++        ->toBeTrue()
++        ->and($user->current_organization_id)
++        ->toBe($organization->id)
++        ->and(getPermissionsTeamId())
++        ->toBeNull();
++
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $organization->id,
++        'id' => $user->id,
 +    ]);
-+
-+    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
-+it('clears existing permission context when organization binding fails', function (): void {
-+    Route::middleware('web')
-+        ->get('/_test/organizations/{organization}', fn (Organization $organization): string => 'ok');
-+
++it('clears a previous team for guests', function (): void {
 +    setPermissionsTeamId(123);
 +
-+    $response = get('/_test/organizations/missing');
++    Route::middleware('web')
++        ->get('/_test/permission-context', fn (): array => ['team_id' => getPermissionsTeamId()]);
 +
-+    $response->assertNotFound();
++    $response = getJson('/_test/permission-context');
 +
-+    expect(getPermissionsTeamId())->toBeNull();
++    $response->assertExactJson(['team_id' => null]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull();
 +});
 +
-+it('clears loaded permission relations before and after a tenant request', function (): void {
-+    $organization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++it('uses no team for a user without an active organization', function (): void {
++    login();
++    setPermissionsTeamId(123);
 +
 +    Route::middleware('web')
-+        ->get('/_test/permission-relations/{organization}', fn (Organization $organization): array => [
-+            'organization_id' => getPermissionsTeamId(),
-+            'permissions_loaded' => $user->relationLoaded('permissions'),
-+            'roles_loaded' => $user->relationLoaded('roles'),
++        ->get('/_test/permission-context', fn (): array => ['team_id' => getPermissionsTeamId()]);
++
++    $response = getJson('/_test/permission-context');
++
++    $response->assertExactJson(['team_id' => null]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull();
++});
++
++it('uses the active organization instead of the organization in the URL', function (): void {
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
++    $activeOrganizationId = $user->current_organization_id;
++    $urlOrganization = Organization::factory()
++        ->recycle($user)
++        ->createOne();
++
++    login($user);
++
++    Route::middleware('web')
++        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
++            'organization_id' => $organization->id,
++            'team_id' => getPermissionsTeamId(),
 +        ]);
 +
-+    setPermissionsTeamId($organization);
-+    $user->load(['permissions', 'roles']);
++    $response = getJson('/_test/organizations/'.$urlOrganization->getRouteKey());
 +
-+    expect($user)
-+        ->relationLoaded('permissions')->toBeTrue()
-+        ->relationLoaded('roles')->toBeTrue();
++    $response->assertForbidden();
 +
-+    $response = get('/_test/permission-relations/'.$organization->getRouteKey());
-+
-+    $response->assertExactJson([
-+        'organization_id' => $organization->id,
-+        'permissions_loaded' => false,
-+        'roles_loaded' => false,
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $activeOrganizationId,
++        'id' => $user->id,
 +    ]);
 +
 +    expect(getPermissionsTeamId())
-+        ->toBeNull()
-+        ->and($user->relationLoaded('permissions'))
-+        ->toBeFalse()
-+        ->and($user->relationLoaded('roles'))
-+        ->toBeFalse();
++        ->toBeNull();
 +});
 +
-+it('clears permission relations when a tenant request throws', function (): void {
++it('clears the active team when the request throws an exception', function (): void {
 +    Exceptions::fake();
 +
-+    $organization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
++
++    login($user);
 +
 +    Route::middleware('web')
-+        ->get(
-+            '/_test/permission-relations-exception/{organization}',
-+            static fn (Organization $organization): never => throw new RuntimeException('Expected test exception.'),
-+        );
++        ->get('/_test/permission-context', function () use ($user): never {
++            expect(getPermissionsTeamId())
++                ->toBe($user->current_organization_id);
 +
-+    setPermissionsTeamId($organization);
-+    $user->load(['permissions', 'roles']);
++            throw new RuntimeException('Permission context request failed.');
++        });
 +
-+    $response = get('/_test/permission-relations-exception/'.$organization->getRouteKey());
++    $response = getJson('/_test/permission-context');
 +
-+    $response->assertServerError();
++    $response->assertInternalServerError();
++
 +    Exceptions::assertReported(RuntimeException::class);
 +
 +    expect(getPermissionsTeamId())
-+        ->toBeNull()
-+        ->and($user->relationLoaded('permissions'))
-+        ->toBeFalse()
-+        ->and($user->relationLoaded('roles'))
-+        ->toBeFalse();
++        ->toBeNull();
 +});
 +
-+it('does not leak loaded roles across tenant requests', function (): void {
-+    $firstOrganization = Organization::factory()->createOne();
-+    $secondOrganization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $firstOrganization);
++it('allows requests for the active organization after route model binding', function (): void {
++    $organization = Organization::factory()
++        ->createOne();
 +
-+    $user->organizations()->syncWithoutDetaching($secondOrganization);
++    $user = login(organization: $organization);
 +
-+    Route::middleware('web')
-+        ->get('/_test/cross-tenant-role/{organization}', fn (Organization $organization): array => [
-+            'authorized' => $user->canInOrganization($organization, Permission::OrganizationsView),
-+        ]);
-+
-+    setPermissionsTeamId($firstOrganization);
-+    $user->load('roles');
-+
-+    $response = get('/_test/cross-tenant-role/'.$secondOrganization->getRouteKey());
-+
-+    $response->assertExactJson([
-+        'authorized' => false,
-+    ]);
-+
-+    expect(getPermissionsTeamId())
-+        ->toBeNull()
-+        ->and($user->relationLoaded('roles'))
-+        ->toBeFalse();
-+});
-+
-+it('sets and clears the organization permission context for web requests', function (): void {
 +    Route::middleware('web')
 +        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
-+            'organization_id' => getPermissionsTeamId(),
++            'organization_id' => $organization->id,
++            'team_id' => getPermissionsTeamId(),
 +        ]);
 +
-+    $organization = Organization::factory()->createOne();
-+
-+    $response = get('/_test/organizations/'.$organization->getRouteKey());
++    $response = getJson('/_test/organizations/'.$organization->getRouteKey());
 +
 +    $response->assertExactJson([
 +        'organization_id' => $organization->id,
++        'team_id' => $organization->id,
 +    ]);
 +
-+    expect(getPermissionsTeamId())->toBeNull();
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $organization->id,
++        'id' => $user->id,
++    ]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull();
++});
++
++it('forbids requests for another membership without switching the active organization', function (): void {
++    $activeOrganization = Organization::factory()
++        ->createOne();
++    $otherOrganization = Organization::factory()
++        ->createOne();
++
++    $user = login(organization: $activeOrganization);
++    $user->organizations()
++        ->attach($otherOrganization);
++
++    Route::middleware('web')
++        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
++            'organization_id' => $organization->id,
++        ]);
++
++    $response = getJson('/_test/organizations/'.$otherOrganization->getRouteKey());
++
++    $response->assertForbidden();
++
++    expect($user->current_organization_id)
++        ->toBe($activeOrganization->id)
++        ->and(getPermissionsTeamId())
++        ->toBeNull();
++
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $activeOrganization->id,
++        'id' => $user->id,
++    ]);
++});
++
++it('resolves the default organization before checking the route when the user has no active organization', function (): void {
++    $organization = Organization::factory()
++        ->createOne();
++
++    $user = login();
++    $user->organizations()
++        ->attach($organization);
++
++    Route::middleware('web')
++        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
++            'organization_id' => $organization->id,
++            'team_id' => getPermissionsTeamId(),
++        ]);
++
++    $response = getJson('/_test/organizations/'.$organization->getRouteKey());
++
++    $response->assertExactJson([
++        'organization_id' => $organization->id,
++        'team_id' => $organization->id,
++    ]);
++
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $organization->id,
++        'id' => $user->id,
++    ]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull();
++});
++
++it('forbids another membership after resolving the default organization without switching to the route organization', function (): void {
++    $defaultOrganization = Organization::factory()
++        ->createOne();
++    $otherOrganization = Organization::factory()
++        ->createOne();
++
++    $user = login();
++    $user->organizations()
++        ->attach($defaultOrganization);
++    $user->organizations()
++        ->attach($otherOrganization);
++    $user->load('organizations');
++
++    Route::middleware('web')
++        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
++            'organization_id' => $organization->id,
++        ]);
++
++    $response = getJson('/_test/organizations/'.$otherOrganization->getRouteKey());
++
++    $response->assertForbidden();
++
++    expect($user->current_organization_id)
++        ->toBe($defaultOrganization->id);
++
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $defaultOrganization->id,
++        'id' => $user->id,
++    ]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull();
++});
++
++it('leaves guests unaffected', function (): void {
++    $organization = Organization::factory()
++        ->createOne();
++
++    Route::middleware('web')
++        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
++            'organization_id' => $organization->id,
++        ]);
++
++    $response = getJson('/_test/organizations/'.$organization->getRouteKey());
++
++    $response->assertExactJson(['organization_id' => $organization->id]);
++});
++
++it('leaves routes without an organization parameter unaffected', function (): void {
++    login();
++
++    Route::middleware('web')
++        ->get('/_test/organizations', fn (): array => ['allowed' => true]);
++
++    $response = getJson('/_test/organizations');
++
++    $response->assertExactJson(['allowed' => true]);
 +});
 diff --git a/tests/Feature/Models/OrganizationRouteKeyTest.php b/tests/Feature/Models/OrganizationRouteKeyTest.php
 new file mode 100644
@@ -1442,11 +1944,221 @@ new file mode 100644
 +    get('/_sqid/'.$organization->sqid)->assertOk()->assertSeeText($organization->sqid);
 +    get('/_sqid/'.$organization->id)->assertNotFound();
 +});
+diff --git a/tests/Integration/Actions/AcceptInvitationTest.php b/tests/Integration/Actions/AcceptInvitationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Actions/AcceptInvitationTest.php
+@@ -0,0 +1,205 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertDatabaseCount;
++use function Pest\Laravel\assertDatabaseHas;
++use function Pest\Laravel\assertDatabaseMissing;
++
++use App\Actions\Invitations\AcceptInvitation;
++use App\Actions\Organizations\EnsureOrganizationRoles;
++use App\Enums\AuditLogEvent;
++use App\Enums\MembershipRole;
++use App\Models\Invitation;
++use App\Models\User;
++use HosmelQ\AuditLog\Data\AuditLogData;
++use HosmelQ\AuditLog\Facades\AuditLog;
++use Spatie\Permission\Exceptions\RoleDoesNotExist;
++use Spatie\Permission\Models\Role;
++
++it('accepts an invitation for the user and switches to its organization', function (): void {
++    AuditLog::fake();
++
++    $user = User::factory()->createOne();
++    $invitation = Invitation::factory()->createOne(['email' => $user->email]);
++
++    resolve(EnsureOrganizationRoles::class)
++        ->handle($invitation->organization);
++
++    resolve(AcceptInvitation::class)->handle($user, $invitation);
++
++    $user->refresh();
++    $invitation->refresh();
++
++    expect($user)
++        ->belongsToOrganization($invitation->organization)->toBeTrue()
++        ->current_organization_id->toBe($invitation->organization_id)
++        ->and($invitation->accepted_at)->toEqual(now());
++
++    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
++        && $log->changes?->before['accepted_at'] === null
++        && $log->changes?->after['accepted_at'] !== null
++        && $log->tenantId === (string) $invitation->organization_id
++        && $log->targets[0]->id === (string) $invitation->id);
++});
++
++it('accepts an invitation and switches organizations when memberships are already loaded', function (): void {
++    AuditLog::fake();
++
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
++    $invitation = Invitation::factory()->createOne(['email' => $user->email]);
++
++    $user->load('organizations');
++
++    resolve(EnsureOrganizationRoles::class)
++        ->handle($invitation->organization);
++
++    resolve(AcceptInvitation::class)->handle($user, $invitation);
++
++    expect($user)
++        ->belongsToOrganization($invitation->organization)
++        ->toBeTrue()
++        ->current_organization_id->toBe($invitation->organization_id)
++        ->currentOrganization->is($invitation->organization)
++        ->toBeTrue()
++        ->and($user->fresh())
++        ->current_organization_id->toBe($invitation->organization_id)
++        ->and($invitation->fresh())
++        ->accepted_at->toEqual(now());
++
++    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
++        && $log->tenantId === (string) $invitation->organization_id
++        && $log->targets[0]->id === (string) $invitation->id);
++});
++
++it('accepts an invitation without duplicating an existing membership', function (): void {
++    AuditLog::fake();
++
++    $user = User::factory()->createOne();
++    $invitation = Invitation::factory()->createOne(['email' => $user->email]);
++
++    $invitation->organization->users()->attach($user);
++
++    resolve(EnsureOrganizationRoles::class)
++        ->handle($invitation->organization);
++
++    resolve(AcceptInvitation::class)->handle($user, $invitation);
++
++    assertDatabaseCount('organization_user', 1);
++
++    expect($user->fresh())
++        ->current_organization_id->toBe($invitation->organization_id)
++        ->and($invitation->fresh())->accepted_at->toEqual(now());
++
++    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
++        && $log->tenantId === (string) $invitation->organization_id
++        && $log->targets[0]->id === (string) $invitation->id);
++});
++
++it('assigns the invited role only in its organization and keeps its permission team active', function (MembershipRole $membershipRole): void {
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
++    $otherOrganization = $user->currentOrganization;
++    $invitation = Invitation::factory()
++        ->createOne([
++            'email' => $user->email,
++            'role' => $membershipRole,
++        ]);
++    $action = resolve(EnsureOrganizationRoles::class);
++
++    $action->handle($otherOrganization);
++    $action->handle($invitation->organization);
++
++    $user->switchOrganization($otherOrganization);
++    $user->assignRole(MembershipRole::Viewer);
++    $user->load(['permissions', 'roles']);
++
++    resolve(AcceptInvitation::class)
++        ->handle($user, $invitation);
++
++    $role = Role::query()
++        ->where('name', $membershipRole->value)
++        ->where('organization_id', $invitation->organization_id)
++        ->sole();
++    $otherRole = Role::query()
++        ->where('name', MembershipRole::Viewer->value)
++        ->where('organization_id', $otherOrganization->id)
++        ->sole();
++
++    assertDatabaseCount('model_has_roles', 2);
++    assertDatabaseHas('model_has_roles', [
++        'model_id' => $user->id,
++        'model_type' => $user->getMorphClass(),
++        'organization_id' => $invitation->organization_id,
++        'role_id' => $role->id,
++    ]);
++    assertDatabaseHas('model_has_roles', [
++        'model_id' => $user->id,
++        'model_type' => $user->getMorphClass(),
++        'organization_id' => $otherOrganization->id,
++        'role_id' => $otherRole->id,
++    ]);
++    assertDatabaseMissing('model_has_roles', [
++        'model_id' => $user->id,
++        'organization_id' => $otherOrganization->id,
++        'role_id' => $role->id,
++    ]);
++
++    expect(getPermissionsTeamId())
++        ->toBe($invitation->organization_id)
++        ->and($user)
++        ->current_organization_id
++        ->toBe($invitation->organization_id)
++        ->relationLoaded('permissions')
++        ->toBeFalse()
++        ->relationLoaded('roles')
++        ->toBeFalse()
++        ->hasRole($membershipRole)
++        ->toBeTrue();
++})
++    ->with([
++        'admin' => MembershipRole::Admin,
++        'owner' => MembershipRole::Owner,
++        'viewer' => MembershipRole::Viewer,
++    ]);
++
++it('rolls back acceptance when the invited role is missing', function (): void {
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
++    $otherOrganization = $user->currentOrganization;
++    $invitation = Invitation::factory()
++        ->createOne(['email' => $user->email]);
++
++    Role::query()
++        ->where('name', $invitation->role->value)
++        ->where('organization_id', $invitation->organization_id)
++        ->sole()
++        ->delete();
++
++    $user->switchOrganization($otherOrganization);
++
++    expect(function () use ($invitation, $user): void {
++        resolve(AcceptInvitation::class)
++            ->handle($user, $invitation);
++    })
++        ->toThrow(RoleDoesNotExist::class);
++
++    assertDatabaseMissing('organization_user', [
++        'organization_id' => $invitation->organization_id,
++        'user_id' => $user->id,
++    ]);
++    assertDatabaseCount('model_has_roles', 0);
++
++    expect(getPermissionsTeamId())
++        ->toBe($invitation->organization_id)
++        ->and($user->fresh())
++        ->current_organization_id
++        ->toBe($otherOrganization->id)
++        ->and($invitation->fresh())
++        ->accepted_at
++        ->toBeNull();
++});
 diff --git a/tests/Integration/Actions/CreateOrganizationTest.php b/tests/Integration/Actions/CreateOrganizationTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/CreateOrganizationTest.php
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,50 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1455,10 +2167,16 @@ new file mode 100644
 +
 +use App\Actions\Organizations\CreateOrganization;
 +use App\Actions\Organizations\Inputs\CreateOrganizationInput;
++use App\Enums\AuditLogEvent;
++use App\Enums\MembershipRole;
 +use App\Models\Organization;
 +use App\Models\User;
++use HosmelQ\AuditLog\Data\AuditLogData;
++use HosmelQ\AuditLog\Facades\AuditLog;
 +
 +it('creates an organization for the user and switches to it', function (): void {
++    AuditLog::fake();
++
 +    $user = User::factory()->createOne();
 +
 +    $organization = resolve(CreateOrganization::class)->handle(
@@ -1483,13 +2201,126 @@ new file mode 100644
 +        ->belongsToOrganization($organization)->toBeTrue()
 +        ->and($organization)
 +        ->owner->is($user)->toBeTrue()
-+        ->users->toHaveCount(1);
++        ->users->toHaveCount(1)
++        ->and($user->hasRole(MembershipRole::Owner))->toBeTrue();
++
++    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::OrganizationCreated->value
++        && $log->tenantId === (string) $organization->id
++        && $log->targets[0]->type === 'organization'
++        && $log->targets[0]->id === (string) $organization->id);
 +});
+diff --git a/tests/Integration/Actions/EnsureOrganizationRolesTest.php b/tests/Integration/Actions/EnsureOrganizationRolesTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Actions/EnsureOrganizationRolesTest.php
+@@ -0,0 +1,102 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertDatabaseCount;
++use function Pest\Laravel\assertDatabaseHas;
++
++use App\Actions\Organizations\EnsureOrganizationRoles;
++use App\Enums\MembershipRole;
++use App\Models\Organization;
++use Spatie\Permission\Models\Permission;
++use Spatie\Permission\Models\Role;
++
++it('creates the shared permission catalog and organization roles through the factory', function (): void {
++    $organization = Organization::factory()->createOne();
++
++    expect(Permission::query()->orderBy('name')->pluck('name')->all())->toBe([
++        'settings.organization',
++        'settings.view',
++        'team.manage',
++        'team.view',
++    ]);
++
++    assertDatabaseCount(Role::class, 3);
++
++    foreach (['admin', 'owner', 'viewer'] as $role) {
++        assertDatabaseHas(Role::class, [
++            'guard_name' => 'web',
++            'name' => $role,
++            'organization_id' => $organization->id,
++        ]);
++    }
++});
++
++it('assigns the exact default permissions', function (MembershipRole $membershipRole, array $permissions): void {
++    $organization = Organization::factory()->createOne();
++    $role = Role::query()
++        ->where('name', $membershipRole->value)
++        ->where('organization_id', $organization->id)
++        ->sole();
++
++    expect($role->permissions()->orderBy('name')->pluck('name')->all())->toBe($permissions);
++})->with([
++    'admin' => [MembershipRole::Admin, ['settings.organization', 'settings.view', 'team.manage', 'team.view']],
++    'owner' => [MembershipRole::Owner, ['settings.organization', 'settings.view', 'team.manage', 'team.view']],
++    'viewer' => [MembershipRole::Viewer, []],
++]);
++
++it('restores defaults without duplicating roles or permissions', function (): void {
++    $organization = Organization::factory()->createOne();
++    $role = Role::query()
++        ->where('name', 'admin')
++        ->where('organization_id', $organization->id)
++        ->sole();
++    $role->syncPermissions([]);
++
++    $roleIds = Role::query()->orderBy('id')->pluck('id')->all();
++    $permissionIds = Permission::query()->orderBy('id')->pluck('id')->all();
++
++    resolve(EnsureOrganizationRoles::class)->handle($organization);
++    resolve(EnsureOrganizationRoles::class)->handle($organization);
++
++    expect(Role::query()->orderBy('id')->pluck('id')->all())->toBe($roleIds)
++        ->and(Permission::query()->orderBy('id')->pluck('id')->all())->toBe($permissionIds)
++        ->and($role->permissions()->count())->toBe(4);
++});
++
++it('preserves another organization roles and the active permission team', function (): void {
++    $otherOrganization = Organization::factory()->createOne();
++    $organization = Organization::factory()->createOne();
++    $otherRole = Role::query()
++        ->where('name', 'admin')
++        ->where('organization_id', $otherOrganization->id)
++        ->sole();
++    $otherRole->syncPermissions(['team.view']);
++    setPermissionsTeamId($otherOrganization->id);
++
++    resolve(EnsureOrganizationRoles::class)->handle($organization);
++
++    expect($otherRole->permissions()->pluck('name')->all())->toBe(['team.view'])
++        ->and(getPermissionsTeamId())->toBe($otherOrganization->id);
++
++    assertDatabaseCount(Permission::class, 4);
++    assertDatabaseCount(Role::class, 6);
++});
++
++it('creates organization roles independently of global roles with the same name', function (MembershipRole $membershipRole): void {
++    Role::query()->create([
++        'guard_name' => 'web',
++        'name' => $membershipRole->value,
++        'organization_id' => null,
++    ]);
++
++    $organization = Organization::factory()->createOne();
++
++    assertDatabaseCount(Role::class, 4);
++    assertDatabaseHas(Role::class, [
++        'guard_name' => 'web',
++        'name' => $membershipRole->value,
++        'organization_id' => $organization->id,
++    ]);
++})->with(MembershipRole::cases());
 diff --git a/tests/Integration/Actions/UpdateOrganizationTest.php b/tests/Integration/Actions/UpdateOrganizationTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/UpdateOrganizationTest.php
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,60 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1498,9 +2329,14 @@ new file mode 100644
 +
 +use App\Actions\Organizations\Inputs\UpdateOrganizationInput;
 +use App\Actions\Organizations\UpdateOrganization;
++use App\Enums\AuditLogEvent;
 +use App\Models\Organization;
++use HosmelQ\AuditLog\Data\AuditLogData;
++use HosmelQ\AuditLog\Facades\AuditLog;
 +
 +it('updates every supported organization field', function (): void {
++    AuditLog::fake();
++
 +    $organization = Organization::factory()->createOne([
 +        'name' => 'My Organization',
 +    ]);
@@ -1519,9 +2355,17 @@ new file mode 100644
 +        'name' => 'Updated Organization',
 +        'owner_id' => $organization->owner_id,
 +    ]);
++    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::OrganizationUpdated->value
++        && $log->changes?->before['name'] === 'My Organization'
++        && $log->changes?->after['name'] === 'Updated Organization'
++        && $log->tenantId === (string) $organization->id
++        && $log->targets[0]->type === 'organization'
++        && $log->targets[0]->id === (string) $organization->id);
 +});
 +
 +it('updates only provided organization fields', function (): void {
++    AuditLog::fake();
++
 +    $organization = Organization::factory()->createOne([
 +        'name' => 'My Organization',
 +    ]);
@@ -1624,6 +2468,108 @@ new file mode 100644
 +        'updated_at' => $organization->updated_at->toJSON(),
 +    ]);
 +});
+diff --git a/tests/Integration/Models/InvitationTest.php b/tests/Integration/Models/InvitationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Models/InvitationTest.php
+@@ -0,0 +1,97 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Invitation;
++use App\Models\Organization;
++use App\Models\User;
++use Illuminate\Database\Eloquent\ModelNotFoundException;
++use Illuminate\Database\UniqueConstraintViolationException;
++
++it('finds unaccepted invitations by their plain token', function (): void {
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++    expect($invitation->token)
++        ->toBe(hash('sha256', 'invitation-token'))
++        ->and(Invitation::findByToken('invitation-token')?->is($invitation))->toBeTrue();
++});
++
++it('returns null when the invitation token does not match', function (): void {
++    Invitation::factory()->withToken('invitation-token')->createOne();
++
++    expect(Invitation::findByToken('unknown-token'))->toBeNull();
++});
++
++it('does not find accepted invitations by token', function (): void {
++    Invitation::factory()->accepted()->withToken('invitation-token')->createOne();
++
++    expect(Invitation::findByToken('invitation-token'))->toBeNull();
++});
++
++it('finds expired invitations that have not been accepted', function (): void {
++    $invitation = Invitation::factory()->expired()->withToken('invitation-token')->createOne();
++
++    expect(Invitation::findByToken('invitation-token')?->is($invitation))->toBeTrue();
++});
++
++it('does not accept a stored token hash as a plain token', function (): void {
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++    expect(Invitation::findByToken($invitation->token))->toBeNull();
++});
++
++it('belongs to the inviting user', function (): void {
++    $user = User::factory()->createOne();
++    $invitation = Invitation::factory()->for($user, 'invitedByUser')->createOne();
++
++    expect($invitation->invitedByUser->is($user))->toBeTrue();
++});
++
++it('belongs to an organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $invitation = Invitation::factory()->recycle($organization)->createOne();
++
++    expect($invitation->organization->is($organization))
++        ->toBeTrue()
++        ->and($invitation->invited_by_user_id)->toBe($organization->owner_id);
++});
++
++it('computes sqids without persisting them', function (): void {
++    $invitation = Invitation::factory()->createOne();
++
++    expect($invitation->sqid)
++        ->toBeString()
++        ->toHaveLength(10)
++        ->and($invitation->getAttributes())
++        ->not->toHaveKey('sqid');
++});
++
++it('finds models by sqid', function (): void {
++    $invitation = Invitation::factory()->createOne();
++
++    expect($invitation->is(Invitation::findBySqid($invitation->sqid)))
++        ->toBeTrue()
++        ->and(Invitation::findBySqid('invalid'))
++        ->toBeNull();
++});
++
++it('scopes queries by sqid', function (): void {
++    $invitation = Invitation::factory()->createOne();
++
++    expect(Invitation::query()->whereSqid($invitation->sqid)->first()?->is($invitation))->toBeTrue();
++});
++
++it('throws when sqid cannot be found', function (): void {
++    Invitation::findOrFailBySqid('invalid');
++})->throws(ModelNotFoundException::class);
++
++it('enforces token uniqueness at the database level', function (): void {
++    $invitation = Invitation::factory()->withToken('invitation-token')->createOne();
++
++    expect(fn () => Invitation::factory()
++        ->recycle($invitation->organization)
++        ->withToken('invitation-token')
++        ->createOne())->toThrow(function (UniqueConstraintViolationException $exception): void {
++            expect($exception->index)->toBe('invitations_token_unique');
++        });
++});
 diff --git a/tests/Integration/Models/OrganizationTest.php b/tests/Integration/Models/OrganizationTest.php
 new file mode 100644
 --- /dev/null
@@ -1689,16 +2635,18 @@ diff --git a/tests/Integration/Models/UserTest.php b/tests/Integration/Models/Us
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Models/UserTest.php
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,257 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +use function Pest\Laravel\assertDatabaseHas;
 +
-+use App\Enums\Permission;
++use App\Enums\MembershipPermission;
++use App\Enums\MembershipRole;
 +use App\Models\Organization;
 +use App\Models\User;
++use Spatie\Permission\Models\Role;
 +
 +it('checks is a user belongs to an organization', function (): void {
 +    $organization = Organization::factory()->createOne();
@@ -1723,19 +2671,97 @@ new file mode 100644
 +        ->ownsOrganization($unrelatedOrganization)->toBeFalse();
 +});
 +
-+it('sets current_organization_id when loading currentOrganization if it not already set', function (): void {
++it('returns the current organization as the default instead of the first membership', function (): void {
++    $firstOrganization = Organization::factory()
++        ->createOne();
++    $user = User::factory()
++        ->hasAttached($firstOrganization)
++        ->withOrganization()
++        ->createOne();
++    $currentOrganization = $user->currentOrganization;
++
++    $organization = $user->defaultOrganization();
++
++    expect($organization)
++        ->is($currentOrganization)
++        ->toBeTrue()
++        ->and($firstOrganization)
++        ->is($currentOrganization)
++        ->toBeFalse();
++});
++
++it('returns the first membership as the default without switching organizations', function (): void {
++    $organizations = Organization::factory()
++        ->count(2);
++    $user = User::factory()
++        ->has($organizations, 'organizations')
++        ->createOne();
++    $firstOrganization = $user->organizations->first();
++    setPermissionsTeamId(123);
++
++    $organization = $user->defaultOrganization();
++
++    expect($organization)
++        ->is($firstOrganization)
++        ->toBeTrue()
++        ->and($user->current_organization_id)
++        ->toBeNull()
++        ->and(getPermissionsTeamId())
++        ->toBe(123);
++
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => null,
++        'id' => $user->id,
++    ]);
++});
++
++it('returns the oldest membership as the default when it was attached second', function (): void {
++    $newerOrganization = Organization::factory()
++        ->createOne();
++    $olderOrganization = Organization::factory()
++        ->createOne();
++    $user = User::factory()
++        ->hasAttached($newerOrganization, ['created_at' => '2025-01-02 00:00:00'])
++        ->hasAttached($olderOrganization, ['created_at' => '2025-01-01 00:00:00'])
++        ->createOne();
++
++    $organization = $user->defaultOrganization();
++
++    expect($organization)
++        ->is($olderOrganization)
++        ->toBeTrue()
++        ->and($user->current_organization_id)
++        ->toBeNull();
++});
++
++it('returns no default organization without memberships', function (): void {
++    $user = User::factory()
++        ->createOne();
++
++    $organization = $user->defaultOrganization();
++
++    expect($organization)
++        ->toBeNull();
++});
++
++it('does not switch organizations when loading currentOrganization without an active organization', function (): void {
 +    $user = User::factory()
 +        ->has(Organization::factory(), 'organizations')
 +        ->createOne();
-+    $organization = $user->organizations()->sole();
++    setPermissionsTeamId(123);
 +
-+    expect($user->current_organization_id)->toBeNull();
++    $organization = $user->currentOrganization;
 +
-+    $user->currentOrganization;
++    expect($organization)
++        ->toBeNull()
++        ->and($user->current_organization_id)
++        ->toBeNull()
++        ->and(getPermissionsTeamId())
++        ->toBe(123);
 +
 +    assertDatabaseHas(User::class, [
++        'current_organization_id' => null,
 +        'id' => $user->id,
-+        'current_organization_id' => $organization->id,
 +    ]);
 +});
 +
@@ -1758,71 +2784,126 @@ new file mode 100644
 +        ->currentOrganization->is($organization)->toBeTrue();
 +});
 +
-+it('denies organization permissions after membership is removed from a loaded user', function (): void {
-+    $organization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++it('changes role and direct permissions when switching the active organization', function (): void {
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
++    $originalOrganization = $user->currentOrganization;
++    $newOrganization = Organization::factory()
++        ->recycle($user)
++        ->createOne();
 +
-+    setPermissionsTeamId($organization);
-+    $user->load(['organizations', 'roles']);
-+    $user->organizations()->detach($organization);
++    $user->organizations()
++        ->attach($newOrganization);
 +
-+    expect($user->canInOrganization($organization, Permission::OrganizationsView))
-+        ->toBeFalse();
++    setPermissionsTeamId($originalOrganization->id);
 +
-+    setPermissionsTeamId(null);
-+});
++    $originalRole = Role::findByName(MembershipRole::Viewer, 'web');
 +
-+it('denies organization permissions without membership even for the owner', function (): void {
-+    $user = User::factory()->createOne();
-+    $organization = Organization::factory()->for($user, 'owner')->createOne();
++    $originalRole->syncPermissions(MembershipPermission::SettingsView);
 +
-+    setPermissionsTeamId($organization);
++    $user->assignRole($originalRole);
++    $user->givePermissionTo(MembershipPermission::TeamView);
 +
-+    expect($user->canInOrganization($organization, Permission::OrganizationsView))
-+        ->toBeFalse();
++    setPermissionsTeamId($newOrganization->id);
 +
-+    setPermissionsTeamId(null);
-+});
++    $newRole = Role::findByName(MembershipRole::Viewer, 'web');
 +
-+it('grants organization permissions to a member through a role', function (): void {
-+    $organization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++    $newRole->syncPermissions(MembershipPermission::SettingsOrganization);
 +
-+    expect($user->canInOrganization($organization, Permission::OrganizationsView))
-+        ->toBeFalse();
++    $user->assignRole($newRole);
++    $user->givePermissionTo(MembershipPermission::TeamManage);
 +
-+    setPermissionsTeamId($organization);
++    $user->switchOrganization($originalOrganization);
++    $user->load(['permissions', 'roles']);
 +
-+    expect($user->canInOrganization($organization, Permission::OrganizationsView))
++    expect($user)
++        ->can(MembershipPermission::SettingsView)
 +        ->toBeTrue()
-+        ->and($user->canInOrganization($organization, Permission::OrganizationsUpdateSettings))
++        ->can(MembershipPermission::TeamView)
++        ->toBeTrue()
++        ->can(MembershipPermission::SettingsOrganization)
++        ->toBeFalse()
++        ->can(MembershipPermission::TeamManage)
 +        ->toBeFalse();
 +
-+    setPermissionsTeamId(null);
-+});
++    $switched = $user->switchOrganization($newOrganization);
 +
-+it('grants organization permissions to an owner who is also a member without a role', function (): void {
-+    $user = User::factory()->createOne();
-+    $organization = Organization::factory()->for($user, 'owner')->createOne();
-+
-+    $user->organizations()->attach($organization);
-+    setPermissionsTeamId($organization);
-+
-+    expect($user->canInOrganization($organization, Permission::OrganizationsView))
++    expect($switched)
++        ->toBeTrue()
++        ->and(getPermissionsTeamId())
++        ->toBe($newOrganization->id)
++        ->and($user)
++        ->can(MembershipPermission::SettingsView)
++        ->toBeFalse()
++        ->can(MembershipPermission::TeamView)
++        ->toBeFalse()
++        ->can(MembershipPermission::SettingsOrganization)
++        ->toBeTrue()
++        ->can(MembershipPermission::TeamManage)
 +        ->toBeTrue();
 +
-+    setPermissionsTeamId(null);
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $newOrganization->id,
++        'id' => $user->id,
++    ]);
++});
++
++it('keeps the active permission context when switching to an unrelated organization is rejected', function (): void {
++    $user = User::factory()
++        ->withOrganization()
++        ->createOne();
++    $organization = $user->currentOrganization;
++    $unrelatedOrganization = Organization::factory()
++        ->createOne();
++
++    setPermissionsTeamId($organization->id);
++
++    $user->givePermissionTo(MembershipPermission::SettingsView);
++    $user->load(['permissions', 'roles']);
++
++    $switched = $user->switchOrganization($unrelatedOrganization);
++
++    expect($switched)
++        ->toBeFalse()
++        ->and(getPermissionsTeamId())
++        ->toBe($organization->id)
++        ->and($user)
++        ->can(MembershipPermission::SettingsView)
++        ->toBeTrue();
++
++    assertDatabaseHas(User::class, [
++        'current_organization_id' => $organization->id,
++        'id' => $user->id,
++    ]);
++});
++
++it('recognizes only the current organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $otherOrganization = Organization::factory()->createOne();
++    $user = User::factory()->withOrganization($organization)->createOne();
++
++    expect($user->isCurrentOrganization($organization))->toBeTrue()
++        ->and($user->isCurrentOrganization($otherOrganization))->toBeFalse();
++});
++
++it('has no current organization before one is selected', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = User::factory()->createOne();
++
++    expect($user->isCurrentOrganization($organization))->toBeFalse();
 +});
 diff --git a/tests/Integration/Policies/OrganizationPolicyTest.php b/tests/Integration/Policies/OrganizationPolicyTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Policies/OrganizationPolicyTest.php
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,79 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+use App\Enums\Permission;
++use App\Enums\MembershipPermission;
++use App\Enums\MembershipRole;
 +use App\Models\Organization;
 +use App\Models\User;
 +use App\Policies\OrganizationPolicy;
@@ -1837,45 +2918,110 @@ new file mode 100644
 +    expect(new OrganizationPolicy()->create($user))->toBeTrue();
 +});
 +
-+it('allows members with the required permission', function (string $ability, Permission $permission): void {
++it('allows members with the required permission', function (string $ability, MembershipPermission $permission): void {
 +    $organization = Organization::factory()->createOne();
-+    $user = loginWithPermission($permission, $organization);
-+
-+    setPermissionsTeamId($organization);
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->givePermissionTo($permission);
 +
 +    expect($user->can($ability, $organization))->toBeTrue();
 +})->with([
-+    'update' => ['update', Permission::OrganizationsUpdateSettings],
-+    'view' => ['view', Permission::OrganizationsView],
++    'update' => ['update', MembershipPermission::SettingsOrganization],
++    'view' => ['view', MembershipPermission::SettingsView],
 +]);
 +
-+it('denies members without the required permission', function (string $ability, Permission $permission): void {
++it('denies members without the required permission', function (string $ability, MembershipPermission $permission): void {
 +    $organization = Organization::factory()->createOne();
-+    $user = loginWithPermission($permission, $organization);
-+
-+    setPermissionsTeamId($organization);
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->givePermissionTo($permission);
 +
 +    expect($user->can($ability, $organization))->toBeFalse();
 +})->with([
-+    'update' => ['update', Permission::OrganizationsView],
-+    'view' => ['view', Permission::OrganizationsUpdateSettings],
++    'update' => ['update', MembershipPermission::SettingsView],
++    'view' => ['view', MembershipPermission::SettingsOrganization],
 +]);
 +
 +it('denies members outside the organization permission context', function (): void {
 +    $organization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++    $user = login(organization: $organization);
++    $user->switchOrganization($organization);
++    $user->givePermissionTo(MembershipPermission::SettingsView);
++    setPermissionsTeamId(null);
 +
 +    expect($user->can('view', $organization))->toBeFalse();
++});
++
++it('denies unrelated users even with the required permission', function (string $ability, MembershipPermission $permission): void {
++    $organization = Organization::factory()->createOne();
++    $user = login();
++    setPermissionsTeamId($organization->id);
++    $user->givePermissionTo($permission);
++
++    expect($user->can($ability, $organization))->toBeFalse();
++})->with([
++    'update' => ['update', MembershipPermission::SettingsOrganization],
++    'view' => ['view', MembershipPermission::SettingsView],
++]);
++
++it('requires a permission-bearing role for an owner', function (): void {
++    $user = User::factory()->createOne();
++    $organization = Organization::factory()->for($user, 'owner')->createOne();
++    $user->switchOrganization($organization);
++
++    expect($user->can('view', $organization))->toBeFalse()
++        ->and($user->can('update', $organization))->toBeFalse();
++
++    $user->assignRole(MembershipRole::Owner);
++
++    expect($user->can('view', $organization))->toBeTrue()
++        ->and($user->can('update', $organization))->toBeTrue();
++});
+diff --git a/tests/Integration/Providers/AppServiceProviderTest.php b/tests/Integration/Providers/AppServiceProviderTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Providers/AppServiceProviderTest.php
+@@ -0,0 +1,30 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Organization;
++use HosmelQ\AuditLog\AuditLogContext;
++
++it('resolves audit tenancy from the authenticated user as organizations change', function (): void {
++    $firstOrganization = Organization::factory()->createOne();
++    $secondOrganization = Organization::factory()->createOne();
++    $user = login(organization: $firstOrganization);
++    $user->organizations()->attach($secondOrganization);
++    $context = resolve(AuditLogContext::class);
++
++    expect($context->tenant())->toBe((string) $firstOrganization->id);
++
++    $user->switchOrganization($secondOrganization);
++
++    expect($context->tenant())->toBe((string) $secondOrganization->id);
++});
++
++it('resolves no audit tenant for guests or users without an organization', function (): void {
++    $context = resolve(AuditLogContext::class);
++
++    expect($context->tenant())->toBeEmpty();
++
++    login();
++
++    expect($context->tenant())->toBeEmpty();
 +});
 diff --git a/tests/Integration/Seeders/LocalSeederTest.php b/tests/Integration/Seeders/LocalSeederTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Seeders/LocalSeederTest.php
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,33 @@
 +<?php
 +
 +declare(strict_types=1);
 +
++use App\Enums\MembershipRole;
 +use App\Models\User;
 +use Database\Seeders\LocalSeeder;
 +
@@ -1891,340 +3037,157 @@ new file mode 100644
 +        ->and($user->ownedOrganizations->modelKeys())
 +        ->toEqualCanonicalizing($user->organizations->modelKeys());
 +});
-diff --git a/tests/Integration/Seeders/RolesAndPermissionsSeederTest.php b/tests/Integration/Seeders/RolesAndPermissionsSeederTest.php
-new file mode 100644
---- /dev/null
-+++ b/tests/Integration/Seeders/RolesAndPermissionsSeederTest.php
-@@ -0,0 +1,105 @@
-+<?php
 +
-+declare(strict_types=1);
++it('assigns owner permissions in every seeded organization', function (): void {
++    $this->seed(LocalSeeder::class);
 +
-+use App\Enums\OrganizationRole;
-+use App\Enums\Permission;
-+use App\Models\Organization;
-+use Database\Seeders\RolesAndPermissionsSeeder;
-+use Illuminate\Cache\CacheManager;
-+use Spatie\Permission\Models\Permission as PermissionModel;
-+use Spatie\Permission\Models\Role as RoleModel;
-+use Spatie\Permission\PermissionRegistrar;
++    $user = User::query()->where('email', 'test@example.com')->sole();
 +
-+afterEach(function (): void {
-+    setPermissionsTeamId(null);
-+});
++    foreach ($user->organizations as $organization) {
++        $user->switchOrganization($organization);
 +
-+it('seeds the exact global catalog and mappings', function (): void {
-+    $this->seed(RolesAndPermissionsSeeder::class);
-+
-+    $permissions = PermissionModel::query()
-+        ->orderBy('name')
-+        ->get();
-+    $roles = RoleModel::query()
-+        ->whereNull('organization_id')
-+        ->orderBy('name')
-+        ->get();
-+
-+    expect($permissions)
-+        ->toHaveCount(2)
-+        ->and($permissions->pluck('guard_name')->unique()->all())
-+        ->toBe(['web'])
-+        ->and($permissions->pluck('name')->all())
-+        ->toEqualCanonicalizing(Permission::values())
-+        ->and($roles)
-+        ->toHaveCount(2)
-+        ->and($roles->pluck('guard_name')->unique()->all())
-+        ->toBe(['web'])
-+        ->and($roles->pluck('name')->all())
-+        ->toBe(OrganizationRole::values());
-+
-+    foreach (OrganizationRole::cases() as $organizationRole) {
-+        $role = $roles->firstWhere('name', $organizationRole->value);
-+        $expectedPermissions = array_map(
-+            static fn (Permission $permission): string => $permission->value,
-+            $organizationRole->permissions(),
-+        );
-+
-+        expect($role)
-+            ->not->toBeNull()
-+            ->and($role->permissions()->orderBy('name')->pluck('name')->all())
-+            ->toEqualCanonicalizing($expectedPermissions);
++        expect($user->hasRole(MembershipRole::Owner))->toBeTrue()
++            ->and($user->can('update', $organization))->toBeTrue();
 +    }
-+});
-+
-+it('seeds idempotently without creating tenant roles and restores the team context', function (): void {
-+    $organization = Organization::factory()->createOne();
-+
-+    setPermissionsTeamId($organization);
-+
-+    $this->seed(RolesAndPermissionsSeeder::class);
-+
-+    $auditor = RoleModel::query()
-+        ->where('guard_name', 'web')
-+        ->where('name', OrganizationRole::Auditor->value)
-+        ->whereNull('organization_id')
-+        ->sole();
-+
-+    $auditor->givePermissionTo(Permission::OrganizationsUpdateSettings);
-+
-+    expect($auditor->hasPermissionTo(Permission::OrganizationsUpdateSettings))
-+        ->toBeTrue();
-+
-+    $this->seed(RolesAndPermissionsSeeder::class);
-+
-+    $auditor->refresh();
-+
-+    expect(getPermissionsTeamId())
-+        ->toBe($organization->id)
-+        ->and(PermissionModel::query()->count())
-+        ->toBe(2)
-+        ->and(RoleModel::query()->whereNull('organization_id')->count())
-+        ->toBe(2)
-+        ->and(RoleModel::query()->where('organization_id', $organization->id)->count())
-+        ->toBe(0)
-+        ->and($auditor->hasPermissionTo(Permission::OrganizationsUpdateSettings))
-+        ->toBeFalse();
-+});
-+
-+it('restores the team context when permission cache clearing fails', function (): void {
-+    $organization = Organization::factory()->createOne();
-+    $permissionRegistrar = new class (resolve(CacheManager::class)) extends PermissionRegistrar {
-+        public function forgetCachedPermissions(): bool
-+        {
-+            throw new RuntimeException('Expected cache failure.');
-+        }
-+    };
-+
-+    $permissionRegistrar->setPermissionsTeamId($organization);
-+
-+    expect(fn (): mixed => resolve(RolesAndPermissionsSeeder::class)->run($permissionRegistrar))
-+        ->toThrow(RuntimeException::class, 'Expected cache failure.')
-+        ->and($permissionRegistrar->getPermissionsTeamId())
-+        ->toBe($organization->id);
-+});
-diff --git a/tests/Integration/Support/OrganizationPermissionContextTest.php b/tests/Integration/Support/OrganizationPermissionContextTest.php
-new file mode 100644
---- /dev/null
-+++ b/tests/Integration/Support/OrganizationPermissionContextTest.php
-@@ -0,0 +1,86 @@
-+<?php
-+
-+declare(strict_types=1);
-+
-+use App\Enums\Permission;
-+use App\Models\Organization;
-+use App\Support\OrganizationPermissionContext;
-+
-+afterEach(function (): void {
-+    setPermissionsTeamId(null);
-+});
-+
-+it('restores nested organization contexts and permission relations', function (): void {
-+    $firstOrganization = Organization::factory()->createOne();
-+    $previousOrganization = Organization::factory()->createOne();
-+    $secondOrganization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $firstOrganization);
-+
-+    $user->organizations()->syncWithoutDetaching($secondOrganization);
-+    setPermissionsTeamId($previousOrganization);
-+
-+    $organizationPermissionContext = resolve(OrganizationPermissionContext::class);
-+
-+    $result = $organizationPermissionContext->run(
-+        $user,
-+        $firstOrganization,
-+        function () use (
-+            $firstOrganization,
-+            $organizationPermissionContext,
-+            $secondOrganization,
-+            $user,
-+        ): string {
-+            expect(getPermissionsTeamId())
-+                ->toBe($firstOrganization->id)
-+                ->and($user->canInOrganization($firstOrganization, Permission::OrganizationsView))
-+                ->toBeTrue();
-+
-+            $organizationPermissionContext->run(
-+                $user,
-+                $secondOrganization,
-+                function () use ($secondOrganization, $user): void {
-+                    expect(getPermissionsTeamId())
-+                        ->toBe($secondOrganization->id)
-+                        ->and($user->canInOrganization($secondOrganization, Permission::OrganizationsView))
-+                        ->toBeFalse();
-+                },
-+            );
-+
-+            expect(getPermissionsTeamId())
-+                ->toBe($firstOrganization->id)
-+                ->and($user->canInOrganization($firstOrganization, Permission::OrganizationsView))
-+                ->toBeTrue();
-+
-+            return 'nested-result';
-+        },
-+    );
-+
-+    expect($result)
-+        ->toBe('nested-result')
-+        ->and(getPermissionsTeamId())
-+        ->toBe($previousOrganization->id)
-+        ->and($user->relationLoaded('permissions'))
-+        ->toBeFalse()
-+        ->and($user->relationLoaded('roles'))
-+        ->toBeFalse();
-+});
-+
-+it('restores the previous context and relations when the callback throws', function (): void {
-+    $previousOrganization = Organization::factory()->createOne();
-+    $targetOrganization = Organization::factory()->createOne();
-+    $user = loginWithPermission(Permission::OrganizationsView, $previousOrganization);
-+
-+    setPermissionsTeamId($previousOrganization);
-+    $user->load(['permissions', 'roles']);
-+
-+    $organizationPermissionContext = resolve(OrganizationPermissionContext::class);
-+
-+    expect(fn (): mixed => $organizationPermissionContext->run(
-+        $user,
-+        $targetOrganization,
-+        static fn (): never => throw new RuntimeException('Expected test exception.'),
-+    ))->toThrow(RuntimeException::class, 'Expected test exception.')
-+        ->and(getPermissionsTeamId())->toBe($previousOrganization->id)
-+        ->and($user->relationLoaded('permissions'))->toBeFalse()
-+        ->and($user->relationLoaded('roles'))->toBeFalse();
 +});
 diff --git a/tests/Pest.php b/tests/Pest.php
 --- a/tests/Pest.php
 +++ b/tests/Pest.php
-@@ -7,1 +7,2 @@
--
-+
-+use App\Enums\Permission;
-@@ -8,1 +9,3 @@
+@@ -8,1 +8,3 @@
 -use App\Models\User;
 +use App\Models\Organization;
 +use App\Models\User;
 +use Database\Factories\UserFactory;
-@@ -10,1 +13,4 @@
--use Tests\TestCase;
-+use Spatie\Permission\Models\Permission as PermissionModel;
-+use Spatie\Permission\Models\Role as RoleModel;
-+use Spatie\Permission\PermissionRegistrar;
-+use Tests\TestCase;
-@@ -26,1 +32,1 @@
+@@ -18,1 +20,2 @@
+-        freezeSecond();
++        freezeSecond();
++        setPermissionsTeamId(null);
+@@ -74,1 +77,1 @@
 -function login(null|Authenticatable $user = null): User
 +function login(null|Authenticatable $user = null, null|Organization $organization = null): User
-@@ -28,1 +34,45 @@
+@@ -76,1 +79,5 @@
 -    $user ??= User::factory()->createOne();
 +    $user ??= User::factory()
 +        ->when($organization, function (UserFactory $factory, Organization $organization): UserFactory {
 +            return $factory->withOrganization($organization);
 +        })
 +        ->createOne();
-+
-+    actingAs($user);
-+
-+    return $user;
-+}
-+
-+function loginWithPermission(
-+    Permission $permission,
-+    Organization $organization,
-+    null|User $user = null,
-+): User {
-+    $user ??= User::factory()->withOrganization($organization)->createOne();
-+    $user->organizations()->syncWithoutDetaching($organization);
-+
-+    $permissionRegistrar = resolve(PermissionRegistrar::class);
-+    $previousTeamId = $permissionRegistrar->getPermissionsTeamId();
-+
-+    $permissionRegistrar->setPermissionsTeamId(null);
-+
-+    try {
-+        $permissionModel = PermissionModel::findOrCreate($permission, 'web');
-+        $roleName = sprintf('test-%s', $permission->value);
-+
-+        RoleModel::findOrCreate($roleName, 'web');
-+
-+        $role = RoleModel::query()
-+            ->where('guard_name', 'web')
-+            ->where('name', $roleName)
-+            ->whereNull($permissionRegistrar->teamsKey)
-+            ->sole();
-+
-+        $role->syncPermissions($permissionModel);
-+
-+        $permissionRegistrar->setPermissionsTeamId($organization);
-+        $user->assignRole($role);
-+    } finally {
-+        $permissionRegistrar->setPermissionsTeamId($previousTeamId);
-+        $user->unsetRelation('permissions');
-+        $user->unsetRelation('roles');
-+    }
-diff --git a/tests/Unit/Enums/OrganizationRoleTest.php b/tests/Unit/Enums/OrganizationRoleTest.php
+diff --git a/tests/Unit/Enums/MembershipPermissionTest.php b/tests/Unit/Enums/MembershipPermissionTest.php
 new file mode 100644
 --- /dev/null
-+++ b/tests/Unit/Enums/OrganizationRoleTest.php
-@@ -0,0 +1,31 @@
++++ b/tests/Unit/Enums/MembershipPermissionTest.php
+@@ -0,0 +1,14 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+use App\Enums\OrganizationRole;
-+use App\Enums\Permission;
++use App\Enums\MembershipPermission;
 +
-+it('defines the exact organization roles', function (): void {
-+    expect(OrganizationRole::values())->toBe([
-+        'auditor',
-+        'organization-admin',
++it('returns translated options', function (): void {
++    expect(MembershipPermission::options())->toBe([
++        ['label' => 'Change organization settings', 'value' => 'settings.organization'],
++        ['label' => 'View settings', 'value' => 'settings.view'],
++        ['label' => 'Manage the team', 'value' => 'team.manage'],
++        ['label' => 'View the team', 'value' => 'team.view'],
 +    ]);
 +});
-+
-+it('defines the exact permission mapping', function (OrganizationRole $role): void {
-+    $expectedPermissions = match ($role) {
-+        OrganizationRole::Auditor => [
-+            Permission::OrganizationsView,
-+        ],
-+        OrganizationRole::OrganizationAdmin => Permission::cases(),
-+    };
-+
-+    expect($role->permissions())->toEqualCanonicalizing($expectedPermissions);
-+})->with(OrganizationRole::cases());
-+
-+it('defines unique organization role values', function (): void {
-+    expect(OrganizationRole::values())
-+        ->toHaveCount(2)
-+        ->and(array_unique(OrganizationRole::values()))
-+        ->toHaveCount(2);
-+});
-diff --git a/tests/Unit/Enums/PermissionTest.php b/tests/Unit/Enums/PermissionTest.php
+diff --git a/tests/Unit/Enums/MembershipRoleTest.php b/tests/Unit/Enums/MembershipRoleTest.php
 new file mode 100644
 --- /dev/null
-+++ b/tests/Unit/Enums/PermissionTest.php
-@@ -0,0 +1,19 @@
++++ b/tests/Unit/Enums/MembershipRoleTest.php
+@@ -0,0 +1,13 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+use App\Enums\Permission;
++use App\Enums\MembershipRole;
 +
-+it('defines the exact permission catalog', function (): void {
-+    expect(Permission::values())->toBe([
-+        'organizations.update-settings',
-+        'organizations.view',
++it('returns translated options', function (): void {
++    expect(MembershipRole::options())->toBe([
++        ['label' => 'Admin', 'value' => 'admin'],
++        ['label' => 'Owner', 'value' => 'owner'],
++        ['label' => 'Viewer', 'value' => 'viewer'],
 +    ]);
 +});
+diff --git a/tests/Unit/Models/InvitationTest.php b/tests/Unit/Models/InvitationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Unit/Models/InvitationTest.php
+@@ -0,0 +1,69 @@
++<?php
 +
-+it('defines unique permission values', function (): void {
-+    expect(Permission::values())
-+        ->toHaveCount(2)
-+        ->and(array_unique(Permission::values()))
-+        ->toHaveCount(2);
++declare(strict_types=1);
++
++use App\Enums\MembershipRole;
++use App\Models\Concerns\HasSqid;
++use App\Models\Invitation;
++use Carbon\CarbonImmutable;
++
++it('uses HasSqid trait', function (): void {
++    $traits = class_uses_recursive(Invitation::class);
++
++    expect($traits)->toContain(HasSqid::class);
++});
++
++it('correctly casts attributes', function (): void {
++    $invitation = new Invitation([
++        'accepted_at' => '2026-10-11 15:00:00',
++        'created_at' => '2026-10-10 14:00:00',
++        'expires_at' => '2026-10-17 14:00:00',
++        'role' => 'admin',
++        'updated_at' => '2026-10-11 15:00:00',
++    ]);
++
++    expect($invitation)
++        ->accepted_at->toBeInstanceOf(CarbonImmutable::class)
++        ->created_at->toBeInstanceOf(CarbonImmutable::class)
++        ->expires_at->toBeInstanceOf(CarbonImmutable::class)
++        ->role->toBe(MembershipRole::Admin)
++        ->updated_at->toBeInstanceOf(CarbonImmutable::class);
++});
++
++it('preserves a null acceptance timestamp', function (): void {
++    $invitation = new Invitation(['accepted_at' => null]);
++
++    expect($invitation->accepted_at)->toBeNull();
++});
++
++it('normalizes email addresses when assigned', function (): void {
++    $invitation = new Invitation();
++
++    $invitation->email = 'Member@Example.com';
++
++    expect($invitation->email)->toBe('member@example.com');
++});
++
++it('identifies invitations in audit logs', function (): void {
++    $invitation = new Invitation(['id' => 123]);
++
++    $identity = $invitation->auditLogIdentity();
++
++    expect($identity)
++        ->id->toBe('123')
++        ->type->toBe('invitation');
++});
++
++it('determines whether an invitation is expired', function (CarbonImmutable $expiresAt, bool $expired): void {
++    $invitation = new Invitation(['expires_at' => $expiresAt]);
++
++    expect($invitation->isExpired())->toBe($expired);
++})->with([
++    'expired' => [fn (): CarbonImmutable => now()->subSecond(), true],
++    'expires now' => [fn (): CarbonImmutable => now(), false],
++    'not expired' => [fn (): CarbonImmutable => now()->addSecond(), false],
++]);
++
++it('defaults the route key to sqid without a route key attribute', function (): void {
++    expect(new Invitation()->getRouteKeyName())->toBe('sqid');
 +});
 diff --git a/tests/Unit/Models/OrganizationTest.php b/tests/Unit/Models/OrganizationTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Unit/Models/OrganizationTest.php
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,32 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2249,19 +3212,37 @@ new file mode 100644
 +        ->created_at->toBeInstanceOf(CarbonImmutable::class)
 +        ->updated_at->toBeInstanceOf(CarbonImmutable::class);
 +});
++
++it('identifies itself in audit logs', function (): void {
++    $organization = new Organization(['id' => 7]);
++
++    expect($organization->auditLogIdentity())
++        ->id->toBe('7')
++        ->type->toBe('organization');
++});
 diff --git a/tests/Unit/Models/UserTest.php b/tests/Unit/Models/UserTest.php
 --- a/tests/Unit/Models/UserTest.php
 +++ b/tests/Unit/Models/UserTest.php
-@@ -5,1 +5,2 @@
--use App\Models\User;
+@@ -4,1 +4,2 @@
+-
++
 +use App\Models\Concerns\HasSqid;
-+use App\Models\User;
 @@ -10,1 +11,7 @@
--it('correctly casts attributes', function (): void {
+-
++
 +it('uses HasSqid trait', function (): void {
 +    $traits = class_uses_recursive(User::class);
 +
 +    expect($traits)->toContain(HasSqid::class);
 +});
 +
-+it('correctly casts attributes', function (): void {
+@@ -66,1 +73,8 @@
+-});
++});
++
++it('does not belong to or own a null organization', function (): void {
++    $user = new User(['id' => 1]);
++
++    expect($user->belongsToOrganization(null))->toBeFalse()
++        ->and($user->ownsOrganization(null))->toBeFalse();
++});

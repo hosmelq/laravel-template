@@ -30,8 +30,6 @@ pre-commit:
             run: composer phpstan -- {staged_files}
 
 pre-push:
-  parallel: true
-
   jobs:
-    - name: PHPStan
-      run: composer phpstan
+    - name: Push checks
+      run: mise run push:check

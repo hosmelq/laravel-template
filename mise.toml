@@ -51,6 +51,11 @@ min_version = "2026.9.15"
 "brew:webp" = { os = "macos", version = "latest" }
 "brew:zlib" = { os = "macos", version = "latest" }
 
+[env]
+COMPOSE_DB_PORT = "0"
+COMPOSE_MAIL_PORT = "0"
+COMPOSE_MAILPIT_PORT = "0"
+
 [hooks]
 enter = "mise bootstrap"
 
@@ -58,6 +63,7 @@ enter = "mise bootstrap"
 lockfile = true
 
 [tasks."db:fresh"]
+depends = ["services:start"]
 description = "Recreates and seeds the database."
 run = "php artisan migrate:fresh --seed"
 
@@ -65,6 +71,16 @@ run = "php artisan migrate:fresh --seed"
 depends = ["services:start"]
 description = "Starts the development environment."
 run = "php artisan dev"
+
+[tasks."push:check"]
+depends = ["services:start"]
+description = "Runs the affected tests, PHPStan, Pint and Rector before a push."
+run = [
+  "vendor/bin/pest --parallel",
+  "composer phpstan",
+  "composer pint -- --test",
+  "composer rector -- --dry-run",
+]
 
 [tasks."services:destroy"]
 description = "Stops local Docker services and removes their data."
@@ -86,7 +102,7 @@ run = ["mise run setup:agent", "mise run services:start", "php artisan migrate -
 [tasks."setup:agent"]
 description = "Installs agent guidelines and skills."
 run = [
-  "php artisan boost:install --ansi --env=local --guidelines --mcp --no-interaction --skills",
+  "php artisan boost:install --ansi --guidelines --skills --no-interaction",
   "nubx -y skills experimental_install",
 ]
 
@@ -103,8 +119,25 @@ run = [
 
 [tasks."setup:ci"]
 depends = ["setup:install"]
-description = "Prepares the application without local services or migrations."
+description = "Installs dependencies and builds, without local infrastructure."
 run = "php artisan package:discover --ansi"
+
+[tasks.signoff]
+description = "Signs off the current pull request."
+run = "scripts/signoff"
+
+[tasks."signoff:check"]
+depends = ["services:start"]
+description = "Runs the CI checks locally."
+run = [
+  "vendor/bin/composer-dependency-analyser",
+  "composer normalize --dry-run",
+  "composer dump-autoload --optimize --strict-psr",
+  "vendor/bin/pest --ci --parallel",
+  "composer phpstan",
+  "composer pint -- --test",
+  "composer rector -- --dry-run",
+]
 
 [tools]
 lefthook = "2.2.2"

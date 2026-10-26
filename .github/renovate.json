@@ -61,7 +61,6 @@
   ],
   "includePaths": [
     ".github/workflows/**",
-    "compose.test.yml",
     "compose.yml",
     "composer.json",
     "mise.toml"

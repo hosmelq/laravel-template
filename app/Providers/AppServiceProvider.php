@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use HosmelQ\AuditLog\AuditLogContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -13,8 +14,10 @@ use Illuminate\Foundation\DevCommands;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -25,14 +28,21 @@ class AppServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        $this->configureAuditLogs();
         $this->configureCommands();
         $this->configureDates();
         $this->configureFormRequests();
+        $this->configureGates();
         $this->configureModels();
         $this->configurePasswordValidation();
         $this->configureRateLimiters();
         $this->configureResources();
         $this->configureUrls();
+    }
+
+    private function configureAuditLogs(): void
+    {
+        AuditLogContext::resolveActorUsing(fn (): null|User => Auth::user());
     }
 
     private function configureCommands(): void
@@ -52,6 +62,11 @@ class AppServiceProvider extends ServiceProvider
     private function configureFormRequests(): void
     {
         FormRequest::failOnUnknownFields();
+    }
+
+    private function configureGates(): void
+    {
+        Gate::define('admin', fn (User $user): bool => $user->isAdmin());
     }
 
     private function configureModels(): void

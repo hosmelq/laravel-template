@@ -1,6 +1,6 @@
 services:
   mailpit:
-    image: axllent/mailpit:v1.31.0@sha256:c96991d9bef73594c246d89ca81411d4e916f03e76a7d2d72fa2ab5dd3c9ce24
+    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
     ports:
       - '127.0.0.1:${COMPOSE_MAIL_PORT:-0}:1025'
       - '127.0.0.1:${COMPOSE_MAILPIT_PORT:-0}:8025'
@@ -15,12 +15,12 @@ services:
       retries: 5
       test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres -d template_testing']
       timeout: 5s
-    image: postgres:18@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+    image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
     ports:
       - '127.0.0.1:${COMPOSE_DB_PORT:-0}:5432'
     volumes:
-      - postgresql:/var/lib/postgresql
+      - template-postgresql:/var/lib/postgresql
       - ./infrastructure/docker/postgresql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
 volumes:
-  postgresql:
+  template-postgresql:

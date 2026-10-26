@@ -1,3 +1,11 @@
+diff --git a/.env.example b/.env.example
+--- a/.env.example
++++ b/.env.example
+@@ -22,1 +22,3 @@
+-
++
++HEALTH_SLACK_WEBHOOK_URL=
++
 diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
 --- a/app/Providers/AppServiceProvider.php
 +++ b/app/Providers/AppServiceProvider.php
@@ -12,8 +20,8 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +use Spatie\Health\Checks\Checks\ScheduleCheck;
 +use Spatie\Health\Facades\Health;
 @@ -30,1 +37,2 @@
--        $this->configureFormRequests();
-+        $this->configureFormRequests();
+-        $this->configureGates();
++        $this->configureGates();
 +        $this->configureLaravelHealth();
 @@ -57,1 +65,13 @@
 -    private function configureModels(): void
@@ -30,12 +38,23 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +    }
 +
 +    private function configureModels(): void
+diff --git a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php
++++ b/composer-dependency-analyser.php
+@@ -19,1 +19,2 @@
+-        'laravel/tinker',
++        'laravel/slack-notification-channel',
++        'laravel/tinker',
 diff --git a/composer.json b/composer.json
 --- a/composer.json
 +++ b/composer.json
-@@ -24,1 +24,2 @@
--    "sentry/sentry-laravel": "^4.28.0",
-+    "sentry/sentry-laravel": "^4.28.0",
+@@ -25,1 +25,2 @@
+-    "laravel/octane": "^2.22.0",
++    "laravel/octane": "^2.22.0",
++    "laravel/slack-notification-channel": "^3.10.0",
+@@ -29,1 +30,2 @@
+-    "sentry/sentry-laravel": "^4.29.0",
++    "sentry/sentry-laravel": "^4.29.0",
 +    "spatie/laravel-health": "^1.40.2",
 diff --git a/config/health.php b/config/health.php
 new file mode 100644
@@ -85,10 +104,10 @@ new file mode 100644
 +        /*
 +         * Notifications will only get sent if this option is set to `true`.
 +         */
-+        'enabled' => env('HEALTH_NOTIFICATIONS_ENABLED', false),
++        'enabled' => (bool) env('HEALTH_SLACK_WEBHOOK_URL'),
 +
 +        'notifications' => [
-+            CheckFailedNotification::class => ['mail'],
++            CheckFailedNotification::class => ['slack'],
 +        ],
 +
 +        /*
@@ -114,7 +133,7 @@ new file mode 100644
 +        'only_on_failure' => false,
 +
 +        'mail' => [
-+            'to' => env('HEALTH_TO_ADDRESS', ''),
++            'to' => 'your@example.com',
 +
 +            'from' => [
 +                'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
@@ -233,7 +252,7 @@ diff --git a/routes/web.php b/routes/web.php
 +
 +Route::get('/up', SimpleHealthCheckController::class);
 +
-+Route::middleware(['auth', 'admin'])->get('/health', HealthCheckResultsController::class);
++Route::middleware(['auth', 'verified', 'can:admin'])->get('/health', HealthCheckResultsController::class);
 diff --git a/tests/Feature/Http/HealthTest.php b/tests/Feature/Http/HealthTest.php
 new file mode 100644
 --- /dev/null
