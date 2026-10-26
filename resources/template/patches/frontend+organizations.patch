@@ -1,0 +1,583 @@
+diff --git a/app/Http/Controllers/OrganizationController.php b/app/Http/Controllers/OrganizationController.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Controllers/OrganizationController.php
+@@ -0,0 +1,68 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Controllers;
++
++use function App\__;
++
++use App\Actions\Organizations\CreateOrganization;
++use App\Actions\Organizations\Inputs\CreateOrganizationInput;
++use App\Actions\Organizations\Inputs\UpdateOrganizationInput;
++use App\Actions\Organizations\UpdateOrganization;
++use App\Http\Requests\StoreOrganizationRequest;
++use App\Http\Requests\UpdateOrganizationRequest;
++use App\Models\Organization;
++use App\Models\User;
++use Illuminate\Container\Attributes\CurrentUser;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Routing\Controllers\HasMiddleware;
++use Illuminate\Routing\Controllers\Middleware;
++use Inertia\Inertia;
++use Inertia\Response;
++
++class OrganizationController implements HasMiddleware
++{
++    public static function middleware(): array
++    {
++        return [
++            new Middleware('can:create,'.Organization::class, only: ['store']),
++            new Middleware('can:update,organization', only: ['update']),
++            new Middleware('can:view,organization', only: ['show']),
++        ];
++    }
++
++    public function show(Organization $organization): Response
++    {
++        return Inertia::render('organization/Settings', [
++            'organization' => $organization->toResource(),
++        ]);
++    }
++
++    public function store(
++        StoreOrganizationRequest $request,
++        #[CurrentUser] User $user,
++        CreateOrganization $createOrganization,
++    ): RedirectResponse {
++        $organization = $createOrganization->handle(
++            $user,
++            CreateOrganizationInput::from($request->validated()),
++        );
++
++        return to_route('organizations.settings.general', ['organization' => $organization])
++            ->toast(__('organization.created.title'));
++    }
++
++    public function update(
++        UpdateOrganizationRequest $request,
++        Organization $organization,
++        UpdateOrganization $updateOrganization,
++    ): RedirectResponse {
++        $updateOrganization->handle(
++            $organization,
++            UpdateOrganizationInput::from($request->validated()),
++        );
++
++        return back()->toast(__('organization.updated.title'));
++    }
++}
+diff --git a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/HandleInertiaRequests.php
+--- a/app/Http/Middleware/HandleInertiaRequests.php
++++ b/app/Http/Middleware/HandleInertiaRequests.php
+@@ -27,1 +27,1 @@
+-     * @return array{user: null|JsonResource}
++     * @return array{organization: null|JsonResource, user: null|JsonResource}
+@@ -34,1 +34,2 @@
+-            'user' => $user?->toResource(),
++            'organization' => $user?->currentOrganization?->toResource(),
++            'user' => $user?->toResource(),
+diff --git a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResource.php
+--- a/app/Http/Resources/UserResource.php
++++ b/app/Http/Resources/UserResource.php
+@@ -7,1 +7,2 @@
+-use App\Models\User;
++use App\Models\Organization;
++use App\Models\User;
+@@ -29,1 +30,6 @@
+-            'created_at' => $this->resource->created_at,
++            'created_at' => $this->resource->created_at,
++            'current_organization' => $this->when(
++                ($currentOrganization = $this->resource->currentOrganization) instanceof Organization,
++                fn (): OrganizationResource => OrganizationResource::make($currentOrganization),
++                null,
++            ),
+diff --git a/resources/js/pages/organization/Settings.tsx b/resources/js/pages/organization/Settings.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/organization/Settings.tsx
+@@ -0,0 +1,34 @@
++import {Button, FieldError, Input, Label, TextField} from '@heroui/react'
++import {Head} from '@inertiajs/react'
++
++import {update} from '#/actions/App/Http/Controllers/OrganizationController'
++import {Form} from '#/components/Form'
++import type {OrganizationResource} from '#/types/laravel'
++
++interface SettingsProps {
++  organization: OrganizationResource
++}
++
++export default function Settings({organization}: SettingsProps) {
++  return (
++    <>
++      <Head title="Organization settings" />
++      <div className="mx-auto max-w-sm">
++        <Form action={update(organization.slug)} className="flex flex-col gap-y-4">
++          {({processing}) => (
++            <>
++              <TextField defaultValue={organization.name} isRequired name="name">
++                <Label>Name</Label>
++                <Input autoComplete="organization" />
++                <FieldError />
++              </TextField>
++              <Button isPending={processing} type="submit">
++                Save
++              </Button>
++            </>
++          )}
++        </Form>
++      </div>
++    </>
++  )
++}
+diff --git a/resources/js/types/global.d.ts b/resources/js/types/global.d.ts
+--- a/resources/js/types/global.d.ts
++++ b/resources/js/types/global.d.ts
+@@ -4,1 +4,1 @@
+-import type {UserResource} from '#/types/laravel'
++import type {OrganizationResource, UserResource} from '#/types/laravel'
+@@ -17,1 +17,2 @@
+-      auth: {
++      auth: {
++        organization: null | OrganizationResource
+diff --git a/resources/js/types/laravel.ts b/resources/js/types/laravel.ts
+--- a/resources/js/types/laravel.ts
++++ b/resources/js/types/laravel.ts
+@@ -35,1 +35,6 @@
+-export interface UserResource extends Resource {
++export interface OrganizationResource extends Resource {
++  name: string
++  slug: string
++}
++
++export interface UserResource extends Resource {
+@@ -36,1 +41,2 @@
+-  avatar_url: string
++  avatar_url: string
++  current_organization: null | OrganizationResource
+diff --git a/routes/web.php b/routes/web.php
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -5,1 +5,2 @@
+-use Illuminate\Support\Facades\Route;
++use App\Http\Controllers\OrganizationController;
++use Illuminate\Support\Facades\Route;
+@@ -19,1 +20,6 @@
+-    Route::middleware('verified')->scopeBindings()->group(function (): void {
++    Route::middleware('verified')->scopeBindings()->group(function (): void {
++        Route::get('organizations/{organization}/settings/general', [OrganizationController::class, 'show'])
++            ->name('organizations.settings.general');
++
++        Route::resource('organizations', OrganizationController::class)
++            ->only(['store', 'update']);
+diff --git a/tests/Feature/Http/Controllers/OrganizationControllerTest.php b/tests/Feature/Http/Controllers/OrganizationControllerTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/Controllers/OrganizationControllerTest.php
+@@ -0,0 +1,346 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\get;
++use function Pest\Laravel\getJson;
++use function Pest\Laravel\mock;
++use function Pest\Laravel\patch;
++use function Pest\Laravel\patchJson;
++use function Pest\Laravel\post;
++use function Pest\Laravel\postJson;
++
++use App\Actions\Organizations\CreateOrganization;
++use App\Actions\Organizations\Inputs\CreateOrganizationInput;
++use App\Actions\Organizations\Inputs\UpdateOrganizationInput;
++use App\Actions\Organizations\UpdateOrganization;
++use App\Enums\Permission;
++use App\Models\Organization;
++use App\Models\User;
++use Illuminate\Support\Str;
++use Inertia\Testing\AssertableInertia;
++
++describe('show', function (): void {
++    it('requires authentication', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        $response = getJson(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertUnauthorized();
++    });
++
++    it('prevents viewing from an unrelated organization', function (): void {
++        $unrelatedOrganization = Organization::factory()->createOne();
++
++        login(organization: Organization::factory()->createOne());
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $unrelatedOrganization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('prevents viewing without permission', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        login(organization: $organization);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('prevents viewing with the settings update permission', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        loginWithPermission(Permission::OrganizationsUpdateSettings, $organization);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('prevents viewing when permission assignment remains without membership', function (): void {
++        $organization = Organization::factory()->createOne();
++        $user = loginWithPermission(Permission::OrganizationsView, $organization);
++
++        $user->organizations()->detach($organization);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('does not use organization view permission from another organization', function (): void {
++        $organization = Organization::factory()->createOne();
++        $user = loginWithPermission(Permission::OrganizationsView, Organization::factory()->createOne());
++
++        $user->organizations()->syncWithoutDetaching($organization);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('prevents an owner without membership from viewing organization settings', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        login($organization->owner);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('allows a member owner to view organization settings', function (): void {
++        $organization = Organization::factory()->createOne();
++        $organization->users()->attach($organization->owner);
++
++        login($organization->owner);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertOk();
++    });
++
++    it('uses the route organization instead of the current organization for permission context', function (): void {
++        $organization = Organization::factory()->createOne();
++        $user = User::factory()->withOrganization(Organization::factory()->createOne())->createOne();
++
++        loginWithPermission(Permission::OrganizationsView, $organization, $user);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertOk()
++            ->assertInertia(function (AssertableInertia $page) use ($organization): void {
++                $page->where('organization.id', $organization->sqid);
++            });
++    });
++
++    it('shows the organization settings page', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        loginWithPermission(Permission::OrganizationsView, $organization);
++
++        $response = get(route('organizations.settings.general', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertOk()
++            ->assertInertia(function (AssertableInertia $page) use ($organization): void {
++                $page->component('organization/Settings')
++                    ->where('organization.id', $organization->sqid)
++                    ->where('organization.name', $organization->name);
++            });
++    });
++});
++
++describe('store', function (): void {
++    it('requires authentication', function (): void {
++        $response = postJson(route('organizations.store'));
++
++        $response->assertUnauthorized();
++    });
++
++    it('validates fields', function (array $data, array $expected): void {
++        login();
++
++        $response = post(route('organizations.store'), $data);
++
++        $response->assertRedirectBackWithErrors($expected);
++    })->with([
++        'max:255 (string)' => [
++            'data' => [
++                'name' => Str::repeat('a', 256),
++            ],
++            'expected' => [
++                'name' => 'The name field must not be greater than 255 characters.',
++            ],
++        ],
++        'required' => [
++            'data' => [],
++            'expected' => [
++                'name' => 'The name field is required.',
++            ],
++        ],
++    ]);
++
++    it('creates an organization', function (): void {
++        $user = login();
++        $organization = Organization::factory()->createOne();
++
++        mock(CreateOrganization::class)
++            ->shouldReceive('handle')
++            ->once()
++            ->withArgs(
++                fn (User $actualUser, CreateOrganizationInput $input): bool => $actualUser->is($user)
++                    && $input->name === 'My Organization',
++            )
++            ->andReturn($organization);
++
++        $response = post(route('organizations.store'), [
++            'name' => 'My Organization',
++        ]);
++
++        $response->assertRedirectToRoute('organizations.settings.general', [
++            'organization' => $organization,
++        ])
++            ->assertToast('Organization created');
++    });
++});
++
++describe('update', function (): void {
++    it('requires authentication', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        $response = patchJson(route('organizations.update', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertUnauthorized();
++    });
++
++    it('prevents updating from an unrelated organization', function (): void {
++        $unrelatedOrganization = Organization::factory()->createOne();
++
++        login(organization: Organization::factory()->createOne());
++
++        $response = patch(route('organizations.update', [
++            'organization' => $unrelatedOrganization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('prevents updating without permission', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        login(organization: $organization);
++
++        $response = patch(route('organizations.update', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('prevents updating with the organization view permission', function (): void {
++        $organization = Organization::factory()->createOne();
++
++        loginWithPermission(Permission::OrganizationsView, $organization);
++
++        $response = patch(route('organizations.update', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('does not use settings update permission from another organization', function (): void {
++        $organization = Organization::factory()->createOne();
++        $user = loginWithPermission(Permission::OrganizationsUpdateSettings, Organization::factory()->createOne());
++
++        $user->organizations()->syncWithoutDetaching($organization);
++
++        $response = patch(route('organizations.update', [
++            'organization' => $organization,
++        ]));
++
++        $response->assertForbidden();
++    });
++
++    it('validates fields', function (array $data, array $expected): void {
++        $organization = Organization::factory()->createOne();
++
++        loginWithPermission(Permission::OrganizationsUpdateSettings, $organization);
++
++        $response = patch(route('organizations.update', [
++            'organization' => $organization,
++        ]), $data);
++
++        $response->assertRedirectBackWithErrors($expected);
++    })->with([
++        'max:255 (string)' => [
++            'data' => [
++                'name' => Str::repeat('a', 256),
++            ],
++            'expected' => [
++                'name' => 'The name field must not be greater than 255 characters.',
++            ],
++        ],
++        'sometimes (required)' => [
++            'data' => [
++                'name' => '',
++            ],
++            'expected' => [
++                'name' => 'The name field is required.',
++            ],
++        ],
++    ]);
++
++    it('allows a member owner to update organization settings', function (): void {
++        $organization = Organization::factory()->createOne();
++        $organization->users()->attach($organization->owner);
++
++        mock(UpdateOrganization::class)
++            ->shouldReceive('handle')
++            ->once()
++            ->withArgs(
++                fn (Organization $actualOrganization, UpdateOrganizationInput $input): bool => $actualOrganization->is($organization)
++                    && $input->name === 'Updated Organization',
++            );
++
++        login($organization->owner);
++
++        $response = patch(route('organizations.update', [
++            'organization' => $organization,
++        ]), [
++            'name' => 'Updated Organization',
++        ]);
++
++        $response->assertRedirectBack()
++            ->assertToast('Settings updated');
++    });
++
++    it('updates organization settings', function (): void {
++        $organization = Organization::factory()->createOne([
++            'name' => 'My Organization',
++        ]);
++
++        mock(UpdateOrganization::class)
++            ->shouldReceive('handle')
++            ->once()
++            ->withArgs(
++                fn (Organization $actualOrganization, UpdateOrganizationInput $input): bool => $actualOrganization->is($organization)
++                    && $input->name === 'Updated Organization',
++            );
++
++        loginWithPermission(Permission::OrganizationsUpdateSettings, $organization);
++
++        $response = patch(route('organizations.update', [
++            'organization' => $organization,
++        ]), [
++            'name' => 'Updated Organization',
++        ]);
++
++        $response->assertRedirectBack()
++            ->assertToast('Settings updated');
++    });
++});
+diff --git a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php b/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php
+--- a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php
++++ b/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php
+@@ -5,1 +5,2 @@
+-use App\Http\Middleware\HandleInertiaRequests;
++use App\Http\Middleware\HandleInertiaRequests;
++use App\Http\Resources\OrganizationResource;
+@@ -6,1 +7,2 @@
+-use App\Http\Resources\UserResource;
++use App\Http\Resources\UserResource;
++use App\Models\Organization;
+@@ -29,1 +31,14 @@
+-});
++});
++
++it('shares the current organization resource', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = User::factory()->withOrganization($organization)->createOne();
++    $request = Request::create('/');
++    $request->setUserResolver(fn (): User => $user);
++
++    $shared = resolve(HandleInertiaRequests::class)->share($request);
++
++    expect($shared['auth']['organization'])
++        ->toBeInstanceOf(OrganizationResource::class)
++        ->resource->is($organization)->toBeTrue();
++});
+diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integration/Http/Resources/UserResourceTest.php
+--- a/tests/Integration/Http/Resources/UserResourceTest.php
++++ b/tests/Integration/Http/Resources/UserResourceTest.php
+@@ -5,1 +5,2 @@
+-use App\Models\User;
++use App\Models\Organization;
++use App\Models\User;
+@@ -19,1 +20,2 @@
+-        'created_at' => $user->created_at->toJSON(),
++        'created_at' => $user->created_at->toJSON(),
++        'current_organization' => null,
+@@ -28,1 +30,15 @@
+-});
++});
++
++it('includes the current organization', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = User::factory()->withOrganization($organization)->createOne();
++
++    $resource = json_decode($user->toResource()->toJson(), true);
++
++    expect($resource['current_organization'])
++        ->toMatchArray([
++            'id' => $organization->sqid,
++            'name' => $organization->name,
++            'slug' => $organization->slug,
++        ]);
++});

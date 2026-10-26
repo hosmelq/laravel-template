@@ -9,6 +9,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -37,6 +38,10 @@ class AppServiceProvider extends ServiceProvider
     private function configureCommands(): void
     {
         DB::prohibitDestructiveCommands($this->app->isProduction());
+
+        DevCommands::only('logs', 'queue', 'schedule', 'vite');
+
+        DevCommands::artisan('schedule:work --whisper', 'schedule');
     }
 
     private function configureDates(): void

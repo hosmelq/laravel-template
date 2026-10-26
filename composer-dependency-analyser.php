@@ -7,8 +7,13 @@ use ShipMonk\ComposerDependencyAnalyser\Config\ErrorType;
 
 return new Configuration()
     ->addPathToScan(__DIR__.'/database/migrations', isDev: false)
+    ->disableReportingUnmatchedIgnores()
     ->ignoreErrors([ErrorType::SHADOW_DEPENDENCY])
+    ->ignoreErrorsOnExtensions([
+        'ext-bcmath',
+    ], [ErrorType::UNUSED_DEPENDENCY])
     ->ignoreErrorsOnPackages([
+        'archtechx/enums',
         'laravel/tinker',
         'propaganistas/laravel-phone',
         'thecodingmachine/safe',

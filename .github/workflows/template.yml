@@ -10,6 +10,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PHP_VERSION: '8.5'
+
 jobs:
   test-template:
     name: Test template feature combinations
@@ -23,11 +26,11 @@ jobs:
           persist-credentials: false
 
       - name: Prepare composer dependencies
-        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
+        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
         with:
           artifact-mode: none
-          php-tools: ""
-          php-version: "8.5"
+          php-tools: ''
+          php-version: ${{ env.PHP_VERSION }}
 
       - name: Install trash CLI
         run: |

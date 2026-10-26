@@ -1,6 +1,7 @@
-diff -ruN -U0 a/app/Actions/Organizations/CreateOrganization.php b/app/Actions/Organizations/CreateOrganization.php
---- a/app/Actions/Organizations/CreateOrganization.php	1969-12-31 18:00:00
-+++ b/app/Actions/Organizations/CreateOrganization.php	2026-07-23 05:58:35
+diff --git a/app/Actions/Organizations/CreateOrganization.php b/app/Actions/Organizations/CreateOrganization.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Organizations/CreateOrganization.php
 @@ -0,0 +1,26 @@
 +<?php
 +
@@ -28,9 +29,10 @@ diff -ruN -U0 a/app/Actions/Organizations/CreateOrganization.php b/app/Actions/O
 +        });
 +    }
 +}
-diff -ruN -U0 a/app/Actions/Organizations/Inputs/CreateOrganizationInput.php b/app/Actions/Organizations/Inputs/CreateOrganizationInput.php
---- a/app/Actions/Organizations/Inputs/CreateOrganizationInput.php	1969-12-31 18:00:00
-+++ b/app/Actions/Organizations/Inputs/CreateOrganizationInput.php	2026-07-23 05:58:35
+diff --git a/app/Actions/Organizations/Inputs/CreateOrganizationInput.php b/app/Actions/Organizations/Inputs/CreateOrganizationInput.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Organizations/Inputs/CreateOrganizationInput.php
 @@ -0,0 +1,18 @@
 +<?php
 +
@@ -50,9 +52,10 @@ diff -ruN -U0 a/app/Actions/Organizations/Inputs/CreateOrganizationInput.php b/a
 +    ) {
 +    }
 +}
-diff -ruN -U0 a/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php
---- a/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php	1969-12-31 18:00:00
-+++ b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php	2026-07-23 05:58:35
+diff --git a/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php
 @@ -0,0 +1,19 @@
 +<?php
 +
@@ -73,9 +76,10 @@ diff -ruN -U0 a/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php b/a
 +    ) {
 +    }
 +}
-diff -ruN -U0 a/app/Actions/Organizations/UpdateOrganization.php b/app/Actions/Organizations/UpdateOrganization.php
---- a/app/Actions/Organizations/UpdateOrganization.php	1969-12-31 18:00:00
-+++ b/app/Actions/Organizations/UpdateOrganization.php	2026-07-23 05:58:35
+diff --git a/app/Actions/Organizations/UpdateOrganization.php b/app/Actions/Organizations/UpdateOrganization.php
+new file mode 100644
+--- /dev/null
++++ b/app/Actions/Organizations/UpdateOrganization.php
 @@ -0,0 +1,18 @@
 +<?php
 +
@@ -95,104 +99,230 @@ diff -ruN -U0 a/app/Actions/Organizations/UpdateOrganization.php b/app/Actions/O
 +        return $organization;
 +    }
 +}
-diff -ruN -U0 a/app/Enums/NanoIDAlphabet.php b/app/Enums/NanoIDAlphabet.php
---- a/app/Enums/NanoIDAlphabet.php	1969-12-31 18:00:00
-+++ b/app/Enums/NanoIDAlphabet.php	2026-07-23 05:58:35
-@@ -0,0 +1,17 @@
+diff --git a/app/Enums/OrganizationRole.php b/app/Enums/OrganizationRole.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/OrganizationRole.php
+@@ -0,0 +1,30 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Enums;
 +
-+use ArchTech\Enums\InvokableCases;
++use ArchTech\Enums\Values;
++use Illuminate\Support\Str;
 +
-+/**
-+ * @method static string Alphanumeric()
-+ */
-+enum NanoIDAlphabet: string
++enum OrganizationRole: string
 +{
-+    use InvokableCases;
++    use Values;
 +
-+    case Alphanumeric = 'abcdefghijklmnopqrstuvwxyz0123456789';
++    case Auditor = 'auditor';
++    case OrganizationAdmin = 'organization-admin';
++
++    /**
++     * @return array<int, Permission>
++     */
++    public function permissions(): array
++    {
++        return match ($this) {
++            self::Auditor => array_values(array_filter(
++                Permission::cases(),
++                static fn (Permission $permission): bool => Str::endsWith($permission->value, '.view'),
++            )),
++            self::OrganizationAdmin => Permission::cases(),
++        };
++    }
 +}
-diff -ruN -U0 a/app/Models/Concerns/HasPublicId.php b/app/Models/Concerns/HasPublicId.php
---- a/app/Models/Concerns/HasPublicId.php	1969-12-31 18:00:00
-+++ b/app/Models/Concerns/HasPublicId.php	2026-06-16 08:49:45
+diff --git a/app/Enums/Permission.php b/app/Enums/Permission.php
+new file mode 100644
+--- /dev/null
++++ b/app/Enums/Permission.php
+@@ -0,0 +1,15 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Enums;
++
++use ArchTech\Enums\Values;
++
++enum Permission: string
++{
++    use Values;
++
++    case OrganizationsUpdateSettings = 'organizations.update-settings';
++    case OrganizationsView = 'organizations.view';
++}
+diff --git a/app/Http/Middleware/SetOrganizationPermissionContext.php b/app/Http/Middleware/SetOrganizationPermissionContext.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Middleware/SetOrganizationPermissionContext.php
 @@ -0,0 +1,70 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+namespace App\Models\Concerns;
++namespace App\Http\Middleware;
 +
-+use function Safe\preg_match;
++use App\Models\Organization;
++use App\Models\User;
++use Closure;
++use Illuminate\Contracts\Auth\Authenticatable;
++use Illuminate\Http\Request;
++use Illuminate\Routing\Route;
++use Spatie\Permission\PermissionRegistrar;
++use Symfony\Component\HttpFoundation\Response;
 +
-+use App\Enums\NanoIDAlphabet;
-+use Hidehalo\Nanoid\Client;
-+use Illuminate\Database\Eloquent\Attributes\Scope;
-+use Illuminate\Database\Eloquent\Builder;
-+use Illuminate\Database\Eloquent\Concerns\HasUniqueStringIds;
-+use Illuminate\Database\Eloquent\ModelNotFoundException;
-+
-+/**
-+ * @property-read string $public_id
-+ */
-+trait HasPublicId
++class SetOrganizationPermissionContext
 +{
-+    use HasUniqueStringIds;
-+
-+    public const int PUBLIC_ID_LENGTH = 10;
-+
-+    public static function findByPublicId(string $publicId): null|static
++    public function __construct(private readonly PermissionRegistrar $permissionRegistrar)
 +    {
-+        return static::query()->wherePublicId($publicId)->first();
 +    }
 +
 +    /**
-+     * @throws ModelNotFoundException<$this>
++     * @param Closure(Request): (Response) $next
 +     */
-+    public static function findOrFailByPublicId(string $publicId): static
++    public function handle(Request $request, Closure $next): Response
 +    {
-+        return static::query()->wherePublicId($publicId)->firstOrFail();
++        $user = $request->user();
++
++        $this->forgetPermissionRelations($user);
++        $this->permissionRegistrar->setPermissionsTeamId(null);
++
++        try {
++            $route = $request->route();
++            $organization = null;
++
++            if ($route instanceof Route) {
++                $organization = $route->parameter('organization');
++
++                if (is_string($organization)) {
++                    $resolvedOrganization = new Organization()->resolveRouteBinding($organization);
++
++                    if ($resolvedOrganization instanceof Organization) {
++                        $organization = $resolvedOrganization;
++
++                        $route->setParameter('organization', $organization);
++                    }
++                }
++            }
++
++            $this->permissionRegistrar->setPermissionsTeamId(
++                $organization instanceof Organization ? $organization : null,
++            );
++
++            return $next($request);
++        } finally {
++            $this->permissionRegistrar->setPermissionsTeamId(null);
++            $this->forgetPermissionRelations($user);
++        }
 +    }
 +
-+    public function getRouteKeyName(): string
++    private function forgetPermissionRelations(null|Authenticatable $user): void
 +    {
-+        return 'public_id';
-+    }
++        if (! $user instanceof User) {
++            return;
++        }
 +
-+    public function newUniqueId(): string
-+    {
-+        return resolve(Client::class)->formattedId(NanoIDAlphabet::Alphanumeric(), self::PUBLIC_ID_LENGTH);
-+    }
-+
-+    /**
-+     * @return string[]
-+     */
-+    public function uniqueIds(): array
-+    {
-+        return ['public_id'];
-+    }
-+
-+    protected function isValidUniqueId(mixed $value): bool
-+    {
-+        return is_string($value)
-+            && preg_match('/^[a-z0-9]{'.self::PUBLIC_ID_LENGTH.'}$/i', $value) === 1;
-+    }
-+
-+    /**
-+     * @param Builder<static> $builder
-+     */
-+    #[Scope]
-+    protected function wherePublicId(Builder $builder, string $publicId): void
-+    {
-+        $builder->where($builder->qualifyColumn('public_id'), $publicId);
++        $user->unsetRelation('permissions');
++        $user->unsetRelation('roles');
 +    }
 +}
-diff -ruN -U0 a/app/Models/Membership.php b/app/Models/Membership.php
---- a/app/Models/Membership.php	1969-12-31 18:00:00
-+++ b/app/Models/Membership.php	2026-07-23 05:58:35
+diff --git a/app/Http/Requests/StoreOrganizationRequest.php b/app/Http/Requests/StoreOrganizationRequest.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Requests/StoreOrganizationRequest.php
+@@ -0,0 +1,22 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Requests;
++
++use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Foundation\Http\FormRequest;
++use Stringable;
++
++class StoreOrganizationRequest extends FormRequest
++{
++    /**
++     * @return array<string, list<string|Stringable|ValidationRule>>
++     */
++    public function rules(): array
++    {
++        return [
++            'name' => ['required', 'string', 'max:255'],
++        ];
++    }
++}
+diff --git a/app/Http/Requests/UpdateOrganizationRequest.php b/app/Http/Requests/UpdateOrganizationRequest.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Requests/UpdateOrganizationRequest.php
+@@ -0,0 +1,22 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Requests;
++
++use Illuminate\Contracts\Validation\ValidationRule;
++use Illuminate\Foundation\Http\FormRequest;
++use Stringable;
++
++class UpdateOrganizationRequest extends FormRequest
++{
++    /**
++     * @return array<string, list<string|Stringable|ValidationRule>>
++     */
++    public function rules(): array
++    {
++        return [
++            'name' => ['sometimes', 'required', 'string', 'max:255'],
++        ];
++    }
++}
+diff --git a/app/Http/Resources/OrganizationResource.php b/app/Http/Resources/OrganizationResource.php
+new file mode 100644
+--- /dev/null
++++ b/app/Http/Resources/OrganizationResource.php
+@@ -0,0 +1,31 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Http\Resources;
++
++use App\Models\Organization;
++use Illuminate\Http\Request;
++use Illuminate\Http\Resources\Json\JsonResource;
++use Override;
++
++/**
++ * @property Organization $resource
++ */
++class OrganizationResource extends JsonResource
++{
++    /**
++     * @return array<string, mixed>
++     */
++    #[Override]
++    public function toArray(Request $request): array
++    {
++        return [
++            'created_at' => $this->resource->created_at,
++            'id' => $this->resource->sqid,
++            'name' => $this->resource->name,
++            'slug' => $this->resource->slug,
++            'updated_at' => $this->resource->updated_at,
++        ];
++    }
++}
+diff --git a/app/Models/Membership.php b/app/Models/Membership.php
+new file mode 100644
+--- /dev/null
++++ b/app/Models/Membership.php
 @@ -0,0 +1,14 @@
 +<?php
 +
@@ -208,30 +338,31 @@ diff -ruN -U0 a/app/Models/Membership.php b/app/Models/Membership.php
 +    #[Override]
 +    public $incrementing = true;
 +}
-diff -ruN -U0 a/app/Models/Organization.php b/app/Models/Organization.php
---- a/app/Models/Organization.php	1969-12-31 18:00:00
-+++ b/app/Models/Organization.php	2026-07-23 05:58:35
-@@ -0,0 +1,61 @@
+diff --git a/app/Models/Organization.php b/app/Models/Organization.php
+new file mode 100644
+--- /dev/null
++++ b/app/Models/Organization.php
+@@ -0,0 +1,56 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Models;
 +
-+use App\Models\Concerns\HasPublicId;
++use App\Models\Concerns\HasSqid;
 +use Carbon\CarbonImmutable;
 +use Database\Factories\OrganizationFactory;
++use Illuminate\Database\Eloquent\Attributes\RouteKey;
 +use Illuminate\Database\Eloquent\Collection;
 +use Illuminate\Database\Eloquent\Factories\HasFactory;
 +use Illuminate\Database\Eloquent\Model;
 +use Illuminate\Database\Eloquent\Relations\BelongsTo;
 +use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-+use Override;
 +use Spatie\Sluggable\Attributes\Sluggable;
 +
 +/**
 + * @property-read int $id
-+ * @property-read string $public_id
++ * @property-read string $sqid
 + * @property-read int $owner_id
 + * @property-read string $name
 + * @property-read string $slug
@@ -240,19 +371,14 @@ diff -ruN -U0 a/app/Models/Organization.php b/app/Models/Organization.php
 + * @property-read User $owner
 + * @property-read Collection<int, User> $users
 + */
++#[RouteKey('slug')]
 +#[Sluggable(from: 'name', to: 'slug', onUpdate: false)]
 +class Organization extends Model
 +{
 +    /** @use HasFactory<OrganizationFactory> */
 +    use HasFactory;
 +
-+    use HasPublicId;
-+
-+    #[Override]
-+    public function getRouteKeyName(): string
-+    {
-+        return 'slug';
-+    }
++    use HasSqid;
 +
 +    /**
 +     * @return BelongsTo<User, $this>
@@ -273,23 +399,47 @@ diff -ruN -U0 a/app/Models/Organization.php b/app/Models/Organization.php
 +            ->withTimestamps();
 +    }
 +}
-diff -ruN -U0 a/app/Models/User.php b/app/Models/User.php
---- a/app/Models/User.php	2026-07-23 05:58:35
-+++ b/app/Models/User.php	2026-07-23 05:58:35
-@@ -12,0 +13 @@
+diff --git a/app/Models/User.php b/app/Models/User.php
+--- a/app/Models/User.php
++++ b/app/Models/User.php
+@@ -7,1 +7,2 @@
+-use App\Models\Concerns\HasSqid;
++use App\Enums\Permission;
++use App\Models\Concerns\HasSqid;
+@@ -13,1 +14,2 @@
+-use Illuminate\Database\Eloquent\Attributes\Hidden;
++use Illuminate\Database\Eloquent\Attributes\Hidden;
 +use Illuminate\Database\Eloquent\Collection;
-@@ -13,0 +15,3 @@
+@@ -14,1 +16,4 @@
+-use Illuminate\Database\Eloquent\Factories\HasFactory;
++use Illuminate\Database\Eloquent\Factories\HasFactory;
 +use Illuminate\Database\Eloquent\Relations\BelongsTo;
 +use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 +use Illuminate\Database\Eloquent\Relations\HasMany;
-@@ -19,0 +24 @@
+@@ -18,1 +23,4 @@
+-use Override;
++use Override;
++use Spatie\Permission\Models\Permission as PermissionModel;
++use Spatie\Permission\Models\Role as RoleModel;
++use Spatie\Permission\Traits\HasRoles;
+@@ -22,1 +30,2 @@
+- * @property-read string $sqid
++ * @property-read string $sqid
 + * @property-read null|int $current_organization_id
-@@ -28,0 +34,3 @@
+@@ -31,1 +40,6 @@
+- * @property-read PersonName $name
++ * @property-read PersonName $name
 + * @property-read null|Organization $currentOrganization
 + * @property-read Collection<int, Organization> $organizations
 + * @property-read Collection<int, Organization> $ownedOrganizations
-@@ -36,0 +45,77 @@
-+
++ * @property-read Collection<int, PermissionModel> $permissions
++ * @property-read Collection<int, RoleModel> $roles
+@@ -39,1 +53,2 @@
+-    use HasSqid;
++    use HasRoles;
++    use HasSqid;
+@@ -42,1 +57,39 @@
+-    public function isAdmin(): bool
 +    public function belongsToOrganization(null|Organization $organization): bool
 +    {
 +        if (! $organization instanceof Organization) {
@@ -301,6 +451,19 @@ diff -ruN -U0 a/app/Models/User.php b/app/Models/User.php
 +        }
 +
 +        return $this->organizations->contains($organization);
++    }
++
++    public function canInOrganization(Organization $organization, Permission $permission): bool
++    {
++        if (getPermissionsTeamId() !== $organization->getKey()) {
++            return false;
++        }
++
++        if (! $this->organizations()->whereKey($organization)->exists()) {
++            return false;
++        }
++
++        return $this->ownsOrganization($organization) || $this->can($permission);
 +    }
 +
 +    /**
@@ -315,6 +478,9 @@ diff -ruN -U0 a/app/Models/User.php b/app/Models/User.php
 +        return $this->belongsTo(Organization::class, 'current_organization_id');
 +    }
 +
++    public function isAdmin(): bool
+@@ -47,1 +100,53 @@
+-    #[Override]
 +    public function isCurrentOrganization(Organization $organization): bool
 +    {
 +        if ($this->currentOrganization === null) {
@@ -366,16 +532,20 @@ diff -ruN -U0 a/app/Models/User.php b/app/Models/User.php
 +
 +        return true;
 +    }
-diff -ruN -U0 a/app/Policies/OrganizationPolicy.php b/app/Policies/OrganizationPolicy.php
---- a/app/Policies/OrganizationPolicy.php	1969-12-31 18:00:00
-+++ b/app/Policies/OrganizationPolicy.php	2026-07-23 05:58:35
-@@ -0,0 +1,26 @@
++
++    #[Override]
+diff --git a/app/Policies/OrganizationPolicy.php b/app/Policies/OrganizationPolicy.php
+new file mode 100644
+--- /dev/null
++++ b/app/Policies/OrganizationPolicy.php
+@@ -0,0 +1,27 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Policies;
 +
++use App\Enums\Permission;
 +use App\Models\Organization;
 +use App\Models\User;
 +
@@ -388,30 +558,338 @@ diff -ruN -U0 a/app/Policies/OrganizationPolicy.php b/app/Policies/OrganizationP
 +
 +    public function update(User $user, Organization $organization): bool
 +    {
-+        return $user->belongsToOrganization($organization);
++        return $user->canInOrganization($organization, Permission::OrganizationsUpdateSettings);
 +    }
 +
 +    public function view(User $user, Organization $organization): bool
 +    {
-+        return $user->belongsToOrganization($organization);
++        return $user->canInOrganization($organization, Permission::OrganizationsView);
 +    }
 +}
-diff -ruN -U0 a/composer-dependency-analyser.php b/composer-dependency-analyser.php
---- a/composer-dependency-analyser.php	2026-08-15 00:00:00
-+++ b/composer-dependency-analyser.php	2026-08-15 00:00:00
-@@ -14 +13,0 @@
--        'thecodingmachine/safe',
-diff -ruN -U0 a/composer.json b/composer.json
---- a/composer.json	2026-07-23 05:58:35
-+++ b/composer.json	2026-07-23 06:02:18
-@@ -18,0 +19 @@
-+    "hidehalo/nanoid-php": "^2.0",
-@@ -23,0 +25,2 @@
+diff --git a/app/Support/OrganizationPermissionContext.php b/app/Support/OrganizationPermissionContext.php
+new file mode 100644
+--- /dev/null
++++ b/app/Support/OrganizationPermissionContext.php
+@@ -0,0 +1,45 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Support;
++
++use App\Models\Organization;
++use App\Models\User;
++use Closure;
++use Spatie\Permission\PermissionRegistrar;
++
++class OrganizationPermissionContext
++{
++    public function __construct(private readonly PermissionRegistrar $permissionRegistrar)
++    {
++    }
++
++    /**
++     * @template TReturn
++     *
++     * @param Closure(): TReturn $callback
++     *
++     * @return TReturn
++     */
++    public function run(User $user, Organization $organization, Closure $callback): mixed
++    {
++        $previousTeamId = $this->permissionRegistrar->getPermissionsTeamId();
++
++        $this->permissionRegistrar->setPermissionsTeamId($organization);
++        $this->forgetPermissionRelations($user);
++
++        try {
++            return $callback();
++        } finally {
++            $this->permissionRegistrar->setPermissionsTeamId($previousTeamId);
++            $this->forgetPermissionRelations($user);
++        }
++    }
++
++    private function forgetPermissionRelations(User $user): void
++    {
++        $user->unsetRelation('permissions');
++        $user->unsetRelation('roles');
++    }
++}
+diff --git a/boost.json b/boost.json
+--- a/boost.json
++++ b/boost.json
+@@ -9,1 +9,3 @@
+-    "packages": [
++    "packages": [
++        "spatie/laravel-permission",
++        "spatie/laravel-sluggable",
+@@ -14,1 +16,3 @@
+-    "skills": [
++    "skills": [
++        "laravel-permission-development",
++        "sluggable-development",
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -7,1 +7,2 @@
+-use Illuminate\Foundation\Application;
++use App\Http\Middleware\SetOrganizationPermissionContext;
++use Illuminate\Foundation\Application;
+@@ -9,1 +10,2 @@
+-use Illuminate\Foundation\Configuration\Middleware;
++use Illuminate\Foundation\Configuration\Middleware;
++use Illuminate\Routing\Middleware\SubstituteBindings;
+@@ -23,1 +25,8 @@
+-            ->redirectUsersTo('/')
++            ->redirectUsersTo('/')
++            ->prependToPriorityList(
++                SubstituteBindings::class,
++                SetOrganizationPermissionContext::class,
++            )
++            ->web(append: [
++                SetOrganizationPermissionContext::class,
++            ])
+diff --git a/composer.json b/composer.json
+--- a/composer.json
++++ b/composer.json
+@@ -24,1 +24,4 @@
+-    "sentry/sentry-laravel": "^4.28.0",
++    "sentry/sentry-laravel": "^4.28.0",
 +    "spatie/laravel-data": "^4.23",
++    "spatie/laravel-permission": "^8.3.2",
 +    "spatie/laravel-sluggable": "^4.0.3",
-diff -ruN -U0 a/database/factories/OrganizationFactory.php b/database/factories/OrganizationFactory.php
---- a/database/factories/OrganizationFactory.php	1969-12-31 18:00:00
-+++ b/database/factories/OrganizationFactory.php	2026-07-23 05:58:35
+diff --git a/config/permission.php b/config/permission.php
+new file mode 100644
+--- /dev/null
++++ b/config/permission.php
+@@ -0,0 +1,222 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Organization;
++use Spatie\Permission\DefaultTeamResolver;
++use Spatie\Permission\Models\Permission;
++use Spatie\Permission\Models\Role;
++
++return [
++
++    'models' => [
++
++        /*
++         * When using the "HasPermissions" trait from this package, we need to know which
++         * Eloquent model should be used to retrieve your permissions. Of course, it
++         * is often just the "Permission" model but you may use whatever you like.
++         *
++         * The model you want to use as a Permission model needs to implement the
++         * `Spatie\Permission\Contracts\Permission` contract.
++         */
++
++        'permission' => Permission::class,
++
++        /*
++         * When using the "HasRoles" trait from this package, we need to know which
++         * Eloquent model should be used to retrieve your roles. Of course, it
++         * is often just the "Role" model but you may use whatever you like.
++         *
++         * The model you want to use as a Role model needs to implement the
++         * `Spatie\Permission\Contracts\Role` contract.
++         */
++
++        'role' => Role::class,
++
++        /*
++         * When using the "Teams" feature from this package, we need to know which
++         * Eloquent model should be used to retrieve your teams. Of course, it
++         * is often just the "Team" model but you may use whatever you like.
++         */
++        'team' => Organization::class,
++
++        /*
++         * When using the "HasModels" trait and passing raw IDs to syncModels,
++         * attachModels, or detachModels, this model class will be used to
++         * resolve those IDs. If null, defaults to the guard's model.
++         */
++        'default_model' => null,
++    ],
++
++    'table_names' => [
++
++        /*
++         * When using the "HasRoles" trait from this package, we need to know which
++         * table should be used to retrieve your roles. We have chosen a basic
++         * default value but you may easily change it to any table you like.
++         */
++
++        'roles' => 'roles',
++
++        /*
++         * When using the "HasPermissions" trait from this package, we need to know which
++         * table should be used to retrieve your permissions. We have chosen a basic
++         * default value but you may easily change it to any table you like.
++         */
++
++        'permissions' => 'permissions',
++
++        /*
++         * When using the "HasPermissions" trait from this package, we need to know which
++         * table should be used to retrieve your models permissions. We have chosen a
++         * basic default value but you may easily change it to any table you like.
++         */
++
++        'model_has_permissions' => 'model_has_permissions',
++
++        /*
++         * When using the "HasRoles" trait from this package, we need to know which
++         * table should be used to retrieve your models roles. We have chosen a
++         * basic default value but you may easily change it to any table you like.
++         */
++
++        'model_has_roles' => 'model_has_roles',
++
++        /*
++         * When using the "HasRoles" trait from this package, we need to know which
++         * table should be used to retrieve your roles permissions. We have chosen a
++         * basic default value but you may easily change it to any table you like.
++         */
++
++        'role_has_permissions' => 'role_has_permissions',
++    ],
++
++    'column_names' => [
++        /*
++         * Change this if you want to name the related pivots other than defaults
++         */
++        'role_pivot_key' => null, // default 'role_id',
++        'permission_pivot_key' => null, // default 'permission_id',
++
++        /*
++         * Change this if you want to name the related model primary key other than
++         * `model_id`.
++         *
++         * For example, this would be nice if your primary keys are all UUIDs. In
++         * that case, name this `model_uuid`.
++         */
++
++        'model_morph_key' => 'model_id',
++
++        /*
++         * Change this if you want to use the teams feature and your related model's
++         * foreign key is other than `team_id`.
++         */
++
++        'team_foreign_key' => 'organization_id',
++    ],
++
++    /*
++     * When set to true, the method for checking permissions will be registered on the gate.
++     * Set this to false if you want to implement custom logic for checking permissions.
++     */
++
++    'register_permission_check_method' => true,
++
++    /*
++     * When set to true, Laravel\Octane\Events\OperationTerminated event listener will be registered
++     * this will refresh permissions on every TickTerminated, TaskTerminated and RequestTerminated
++     * NOTE: This should not be needed in most cases, but an Octane/Vapor combination benefited from it.
++     */
++    'register_octane_reset_listener' => false,
++
++    /*
++     * Events will fire when a role or permission is assigned/unassigned:
++     * \Spatie\Permission\Events\RoleAttachedEvent
++     * \Spatie\Permission\Events\RoleDetachedEvent
++     * \Spatie\Permission\Events\PermissionAttachedEvent
++     * \Spatie\Permission\Events\PermissionDetachedEvent
++     *
++     * To enable, set to true, and then create listeners to watch these events.
++     */
++    'events_enabled' => false,
++
++    /*
++     * Teams Feature.
++     * When set to true the package implements teams using the 'team_foreign_key'.
++     * If you want the migrations to register the 'team_foreign_key', you must
++     * set this to true before doing the migration.
++     * If you already did the migration then you must make a new migration to also
++     * add 'team_foreign_key' to 'roles', 'model_has_roles', and 'model_has_permissions'
++     * (view the latest version of this package's migration file)
++     */
++
++    'teams' => true,
++
++    /*
++     * The class to use to resolve the permissions team id
++     */
++    'team_resolver' => DefaultTeamResolver::class,
++
++    /*
++     * Passport Client Credentials Grant
++     * When set to true the package will use Passports Client to check permissions
++     */
++
++    'use_passport_client_credentials' => false,
++
++    /*
++     * When set to true, the required permission names are added to exception messages.
++     * This could be considered an information leak in some contexts, so the default
++     * setting is false here for optimum safety.
++     */
++
++    'display_permission_in_exception' => false,
++
++    /*
++     * When set to true, the required role names are added to exception messages.
++     * This could be considered an information leak in some contexts, so the default
++     * setting is false here for optimum safety.
++     */
++
++    'display_role_in_exception' => false,
++
++    /*
++     * By default wildcard permission lookups are disabled.
++     * See documentation to understand supported syntax.
++     */
++
++    'enable_wildcard_permission' => false,
++
++    /*
++     * The class to use for interpreting wildcard permissions.
++     * If you need to modify delimiters, override the class and specify its name here.
++     */
++    // 'wildcard_permission' => Spatie\Permission\WildcardPermission::class,
++
++    /* Cache-specific settings */
++
++    'cache' => [
++
++        /*
++         * By default all permissions are cached for 24 hours to speed up performance.
++         * When permissions or roles are updated the cache is flushed automatically.
++         */
++
++        'expiration_time' => DateInterval::createFromDateString('24 hours'),
++
++        /*
++         * The cache key used to store all permissions.
++         */
++
++        'key' => 'spatie.permission.cache',
++
++        /*
++         * You may optionally indicate a specific cache driver to use for permission and
++         * role caching using any of the `store` drivers listed in the cache.php config
++         * file. Using 'default' here means to use the `default` set in cache.php.
++         */
++
++        'store' => 'default',
++    ],
++];
+diff --git a/database/factories/OrganizationFactory.php b/database/factories/OrganizationFactory.php
+new file mode 100644
+--- /dev/null
++++ b/database/factories/OrganizationFactory.php
 @@ -0,0 +1,25 @@
 +<?php
 +
@@ -438,16 +916,20 @@ diff -ruN -U0 a/database/factories/OrganizationFactory.php b/database/factories/
 +        ];
 +    }
 +}
-diff -ruN -U0 a/database/factories/UserFactory.php b/database/factories/UserFactory.php
---- a/database/factories/UserFactory.php	2026-07-23 05:58:35
-+++ b/database/factories/UserFactory.php	2026-07-23 05:58:35
-@@ -6,0 +7 @@
+diff --git a/database/factories/UserFactory.php b/database/factories/UserFactory.php
+--- a/database/factories/UserFactory.php
++++ b/database/factories/UserFactory.php
+@@ -7,1 +7,2 @@
+-use App\Models\User;
 +use App\Models\Organization;
-@@ -29,0 +31,2 @@
++use App\Models\User;
+@@ -29,1 +30,3 @@
+-        return [
++        return [
 +            'current_organization_id' => null,
 +
-@@ -46,0 +50,13 @@
-+    }
+@@ -48,1 +51,14 @@
+-}
 +
 +    /**
 +     * @param array<string, mixed> $values
@@ -460,22 +942,26 @@ diff -ruN -U0 a/database/factories/UserFactory.php b/database/factories/UserFact
 +            ->afterCreating(function (User $user) use ($organization, $values): void {
 +                $user->organizations()->syncWithPivotValues($organization, $values);
 +            });
-diff -ruN -U0 a/database/migrations/0001_01_01_000000_create_users_table.php b/database/migrations/0001_01_01_000000_create_users_table.php
---- a/database/migrations/0001_01_01_000000_create_users_table.php	2026-07-23 05:58:35
-+++ b/database/migrations/0001_01_01_000000_create_users_table.php	2026-07-23 06:00:23
-@@ -14,0 +15,2 @@
++    }
++}
+diff --git a/database/migrations/0001_01_01_000000_create_users_table.php b/database/migrations/0001_01_01_000000_create_users_table.php
+--- a/database/migrations/0001_01_01_000000_create_users_table.php
++++ b/database/migrations/0001_01_01_000000_create_users_table.php
+@@ -15,1 +15,3 @@
+-            $table->caseInsensitiveText('email')->unique();
 +            $table->foreignId('current_organization_id')->nullable()->index();
 +
-diff -ruN -U0 a/database/migrations/2025_09_06_024317_create_organizations_table.php b/database/migrations/2025_09_06_024317_create_organizations_table.php
---- a/database/migrations/2025_09_06_024317_create_organizations_table.php	1969-12-31 18:00:00
-+++ b/database/migrations/2025_09_06_024317_create_organizations_table.php	2026-07-23 05:58:35
-@@ -0,0 +1,31 @@
++            $table->caseInsensitiveText('email')->unique();
+diff --git a/database/migrations/2025_09_06_024317_create_organizations_table.php b/database/migrations/2025_09_06_024317_create_organizations_table.php
+new file mode 100644
+--- /dev/null
++++ b/database/migrations/2025_09_06_024317_create_organizations_table.php
+@@ -0,0 +1,23 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +use Illuminate\Database\Migrations\Migration;
-+use Illuminate\Support\Facades\DB;
 +use Tpetry\PostgresqlEnhanced\Schema\Blueprint;
 +use Tpetry\PostgresqlEnhanced\Support\Facades\Schema;
 +
@@ -484,7 +970,6 @@ diff -ruN -U0 a/database/migrations/2025_09_06_024317_create_organizations_table
 +    {
 +        Schema::create('organizations', function (Blueprint $table): void {
 +            $table->id();
-+            $table->caseInsensitiveText('public_id')->unique();
 +
 +            $table->foreignId('owner_id')->index();
 +
@@ -493,17 +978,12 @@ diff -ruN -U0 a/database/migrations/2025_09_06_024317_create_organizations_table
 +
 +            $table->timestamps();
 +        });
-+
-+        DB::statement(<<<'SQL'
-+            ALTER TABLE organizations
-+            ADD CONSTRAINT organizations_public_id_format_check
-+            CHECK (public_id ~* '^[a-z0-9]{10}$')
-+        SQL);
 +    }
 +};
-diff -ruN -U0 a/database/migrations/2025_09_06_024322_create_organization_user_table.php b/database/migrations/2025_09_06_024322_create_organization_user_table.php
---- a/database/migrations/2025_09_06_024322_create_organization_user_table.php	1969-12-31 18:00:00
-+++ b/database/migrations/2025_09_06_024322_create_organization_user_table.php	2026-07-23 05:58:35
+diff --git a/database/migrations/2025_09_06_024322_create_organization_user_table.php b/database/migrations/2025_09_06_024322_create_organization_user_table.php
+new file mode 100644
+--- /dev/null
++++ b/database/migrations/2025_09_06_024322_create_organization_user_table.php
 @@ -0,0 +1,23 @@
 +<?php
 +
@@ -528,50 +1008,445 @@ diff -ruN -U0 a/database/migrations/2025_09_06_024322_create_organization_user_t
 +        });
 +    }
 +};
-diff -ruN -U0 a/phpstan-baseline.neon b/phpstan-baseline.neon
---- a/phpstan-baseline.neon	2026-07-23 05:58:35
-+++ b/phpstan-baseline.neon	2026-07-23 06:03:02
-@@ -7,0 +8,36 @@
+diff --git a/database/migrations/2026_08_28_133759_create_permission_tables.php b/database/migrations/2026_08_28_133759_create_permission_tables.php
+new file mode 100644
+--- /dev/null
++++ b/database/migrations/2026_08_28_133759_create_permission_tables.php
+@@ -0,0 +1,150 @@
++<?php
 +
-+		-
-+			message: '#^Dynamic call to static method Illuminate\\Database\\Eloquent\\Builder\<static\(App\\Models\\Organization\)\>\:\:wherePublicId\(\)\.$#'
-+			identifier: staticMethod.dynamicCall
-+			count: 2
-+			path: app/Models/Organization.php
++declare(strict_types=1);
 +
-+		-
-+			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsTo" over abstract one$#'
-+			identifier: typePerfect.narrowReturnObjectType
-+			count: 1
-+			path: app/Models/Organization.php
++use Illuminate\Contracts\Cache\Factory;
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Config;
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Schema;
 +
-+		-
-+			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsToMany" over abstract one$#'
-+			identifier: typePerfect.narrowReturnObjectType
-+			count: 1
-+			path: app/Models/Organization.php
++return new class () extends Migration {
++    /**
++     * Run the migrations.
++     */
++    public function up(): void
++    {
++        $teams = Config::boolean('permission.teams');
++        /** @var array{model_has_permissions: string, model_has_roles: string, permissions: string, role_has_permissions: string, roles: string} $tableNames */
++        $tableNames = Config::array('permission.table_names');
++        /** @var array{model_morph_key: string, permission_pivot_key: null|string, role_pivot_key: null|string, team_foreign_key: string} $columnNames */
++        $columnNames = Config::array('permission.column_names');
++        $pivotRole = $columnNames['role_pivot_key'] ?? 'role_id';
++        $pivotPermission = $columnNames['permission_pivot_key'] ?? 'permission_id';
 +
-+		-
-+			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsTo" over abstract one$#'
-+			identifier: typePerfect.narrowReturnObjectType
-+			count: 1
-+			path: app/Models/User.php
++        /**
++         * See `docs/prerequisites.md` for suggested lengths on 'name' and 'guard_name' if "1071 Specified key was too long" errors are encountered.
++         */
++        Schema::create($tableNames['permissions'], static function (Blueprint $table): void {
++            $table->id(); // permission id
++            $table->string('name');
++            $table->string('guard_name');
++            $table->timestamps();
 +
-+		-
-+			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\BelongsToMany" over abstract one$#'
-+			identifier: typePerfect.narrowReturnObjectType
-+			count: 1
-+			path: app/Models/User.php
++            $table->unique(['name', 'guard_name']);
++        });
 +
-+		-
-+			message: '#^Provide more specific return type "Illuminate\\Database\\Eloquent\\Relations\\HasMany" over abstract one$#'
-+			identifier: typePerfect.narrowReturnObjectType
-+			count: 1
-+			path: app/Models/User.php
-diff -ruN -U0 a/tests/Integration/Actions/CreateOrganizationTest.php b/tests/Integration/Actions/CreateOrganizationTest.php
---- a/tests/Integration/Actions/CreateOrganizationTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Actions/CreateOrganizationTest.php	2026-07-23 05:58:35
-@@ -0,0 +1,36 @@
++        /**
++         * See `docs/prerequisites.md` for suggested lengths on 'name' and 'guard_name' if "1071 Specified key was too long" errors are encountered.
++         */
++        Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames): void {
++            $table->id(); // role id
++
++            if ($teams || Config::boolean('permission.testing', false)) { // permission.testing is a fix for sqlite testing
++                $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
++                $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
++            }
++
++            $table->string('name');
++            $table->string('guard_name');
++            $table->timestamps();
++
++            if ($teams || Config::boolean('permission.testing', false)) {
++                $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
++            } else {
++                $table->unique(['name', 'guard_name']);
++            }
++        });
++
++        $grammar = DB::connection()->getQueryGrammar();
++        $guardNameColumn = $grammar->wrap('guard_name');
++        $indexName = $grammar->wrap('roles_global_name_guard_name_unique');
++        $nameColumn = $grammar->wrap('name');
++        $rolesTable = $grammar->wrapTable($tableNames['roles']);
++        $teamForeignKey = $grammar->wrap($columnNames['team_foreign_key']);
++
++        DB::statement(<<<SQL
++            CREATE UNIQUE INDEX {$indexName}
++            ON {$rolesTable} ({$nameColumn}, {$guardNameColumn})
++            WHERE {$teamForeignKey} IS NULL
++        SQL);
++
++        Schema::create($tableNames['model_has_permissions'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotPermission, $teams): void {
++            $table->unsignedBigInteger($pivotPermission);
++
++            $table->string('model_type');
++            $table->unsignedBigInteger($columnNames['model_morph_key']);
++            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_permissions_model_id_model_type_index');
++
++            $table->foreign($pivotPermission)
++                ->references('id') // permission id
++                ->on($tableNames['permissions'])
++                ->cascadeOnDelete();
++
++            if ($teams) {
++                $table->unsignedBigInteger($columnNames['team_foreign_key']);
++                $table->index($columnNames['team_foreign_key'], 'model_has_permissions_team_foreign_key_index');
++
++                $table->primary(
++                    [$columnNames['team_foreign_key'], $pivotPermission, $columnNames['model_morph_key'], 'model_type'],
++                    'model_has_permissions_permission_model_type_primary'
++                );
++            } else {
++                $table->primary(
++                    [$pivotPermission, $columnNames['model_morph_key'], 'model_type'],
++                    'model_has_permissions_permission_model_type_primary'
++                );
++            }
++        });
++
++        Schema::create($tableNames['model_has_roles'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotRole, $teams): void {
++            $table->unsignedBigInteger($pivotRole);
++
++            $table->string('model_type');
++            $table->unsignedBigInteger($columnNames['model_morph_key']);
++            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_roles_model_id_model_type_index');
++
++            $table->foreign($pivotRole)
++                ->references('id') // role id
++                ->on($tableNames['roles'])
++                ->cascadeOnDelete();
++
++            if ($teams) {
++                $table->unsignedBigInteger($columnNames['team_foreign_key']);
++                $table->index($columnNames['team_foreign_key'], 'model_has_roles_team_foreign_key_index');
++
++                $table->primary(
++                    [$columnNames['team_foreign_key'], $pivotRole, $columnNames['model_morph_key'], 'model_type'],
++                    'model_has_roles_role_model_type_primary'
++                );
++            } else {
++                $table->primary(
++                    [$pivotRole, $columnNames['model_morph_key'], 'model_type'],
++                    'model_has_roles_role_model_type_primary'
++                );
++            }
++        });
++
++        Schema::create($tableNames['role_has_permissions'], static function (Blueprint $table) use ($tableNames, $pivotRole, $pivotPermission): void {
++            $table->unsignedBigInteger($pivotPermission);
++            $table->unsignedBigInteger($pivotRole);
++
++            $table->foreign($pivotPermission)
++                ->references('id') // permission id
++                ->on($tableNames['permissions'])
++                ->cascadeOnDelete();
++
++            $table->foreign($pivotRole)
++                ->references('id') // role id
++                ->on($tableNames['roles'])
++                ->cascadeOnDelete();
++
++            $table->primary([$pivotPermission, $pivotRole], 'role_has_permissions_permission_id_role_id_primary');
++        });
++
++        resolve(Factory::class)
++            ->store(Config::string('permission.cache.store') !== 'default' ? Config::string('permission.cache.store') : null)
++            ->forget(Config::string('permission.cache.key'));
++    }
++};
+diff --git a/database/seeders/DatabaseSeeder.php b/database/seeders/DatabaseSeeder.php
+--- a/database/seeders/DatabaseSeeder.php
++++ b/database/seeders/DatabaseSeeder.php
+@@ -15,1 +15,2 @@
+-    {
++    {
++        $this->call(RolesAndPermissionsSeeder::class);
+diff --git a/database/seeders/LocalSeeder.php b/database/seeders/LocalSeeder.php
+--- a/database/seeders/LocalSeeder.php
++++ b/database/seeders/LocalSeeder.php
+@@ -7,1 +7,2 @@
+-use App\Models\User;
++use App\Models\Organization;
++use App\Models\User;
+@@ -14,1 +15,1 @@
+-        User::factory()->createOne([
++        $user = User::factory()->createOne([
+@@ -18,1 +19,9 @@
+-        ]);
++        ]);
++
++        $organizations = Organization::factory()
++            ->count(2)
++            ->for($user, 'owner')
++            ->sequence(['name' => 'Local'], [])
++            ->create();
++
++        $user->organizations()->sync($organizations);
+diff --git a/database/seeders/RolesAndPermissionsSeeder.php b/database/seeders/RolesAndPermissionsSeeder.php
+new file mode 100644
+--- /dev/null
++++ b/database/seeders/RolesAndPermissionsSeeder.php
+@@ -0,0 +1,46 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Database\Seeders;
++
++use App\Enums\OrganizationRole;
++use App\Enums\Permission;
++use Illuminate\Database\Seeder;
++use Spatie\Permission\Models\Permission as PermissionModel;
++use Spatie\Permission\Models\Role as RoleModel;
++use Spatie\Permission\PermissionRegistrar;
++
++class RolesAndPermissionsSeeder extends Seeder
++{
++    private const string GUARD_NAME = 'web';
++
++    public function run(PermissionRegistrar $permissionRegistrar): void
++    {
++        $previousTeamId = $permissionRegistrar->getPermissionsTeamId();
++
++        try {
++            $permissionRegistrar->setPermissionsTeamId(null);
++            $permissionRegistrar->forgetCachedPermissions();
++
++            foreach (Permission::cases() as $permission) {
++                PermissionModel::findOrCreate($permission, self::GUARD_NAME);
++            }
++
++            foreach (OrganizationRole::cases() as $role) {
++                RoleModel::findOrCreate($role, self::GUARD_NAME);
++
++                $globalRole = RoleModel::query()
++                    ->where('guard_name', self::GUARD_NAME)
++                    ->where('name', $role->value)
++                    ->whereNull($permissionRegistrar->teamsKey)
++                    ->sole();
++
++                $globalRole->syncPermissions($role->permissions());
++            }
++        } finally {
++            $permissionRegistrar->setPermissionsTeamId($previousTeamId);
++            $permissionRegistrar->forgetCachedPermissions();
++        }
++    }
++}
+diff --git a/lang/en/organization.php b/lang/en/organization.php
+new file mode 100644
+--- /dev/null
++++ b/lang/en/organization.php
+@@ -0,0 +1,15 @@
++<?php
++
++declare(strict_types=1);
++
++return [
++
++    'created' => [
++        'title' => 'Organization created',
++    ],
++
++    'updated' => [
++        'title' => 'Settings updated',
++    ],
++
++];
+diff --git a/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.php b/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.php
+@@ -0,0 +1,146 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\get;
++
++use App\Enums\Permission;
++use App\Models\Organization;
++use Illuminate\Support\Facades\Exceptions;
++use Illuminate\Support\Facades\Route;
++
++it('clears existing permission context for requests without an organization', function (): void {
++    Route::middleware('web')
++        ->get('/_test/without-organization', fn (): array => [
++            'organization_id' => getPermissionsTeamId(),
++        ]);
++
++    setPermissionsTeamId(123);
++
++    $response = get('/_test/without-organization');
++
++    $response->assertExactJson([
++        'organization_id' => null,
++    ]);
++
++    expect(getPermissionsTeamId())->toBeNull();
++});
++
++it('clears existing permission context when organization binding fails', function (): void {
++    Route::middleware('web')
++        ->get('/_test/organizations/{organization}', fn (Organization $organization): string => 'ok');
++
++    setPermissionsTeamId(123);
++
++    $response = get('/_test/organizations/missing');
++
++    $response->assertNotFound();
++
++    expect(getPermissionsTeamId())->toBeNull();
++});
++
++it('clears loaded permission relations before and after a tenant request', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++
++    Route::middleware('web')
++        ->get('/_test/permission-relations/{organization}', fn (Organization $organization): array => [
++            'organization_id' => getPermissionsTeamId(),
++            'permissions_loaded' => $user->relationLoaded('permissions'),
++            'roles_loaded' => $user->relationLoaded('roles'),
++        ]);
++
++    setPermissionsTeamId($organization);
++    $user->load(['permissions', 'roles']);
++
++    expect($user)
++        ->relationLoaded('permissions')->toBeTrue()
++        ->relationLoaded('roles')->toBeTrue();
++
++    $response = get('/_test/permission-relations/'.$organization->getRouteKey());
++
++    $response->assertExactJson([
++        'organization_id' => $organization->id,
++        'permissions_loaded' => false,
++        'roles_loaded' => false,
++    ]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull()
++        ->and($user->relationLoaded('permissions'))
++        ->toBeFalse()
++        ->and($user->relationLoaded('roles'))
++        ->toBeFalse();
++});
++
++it('clears permission relations when a tenant request throws', function (): void {
++    Exceptions::fake();
++
++    $organization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++
++    Route::middleware('web')
++        ->get(
++            '/_test/permission-relations-exception/{organization}',
++            static fn (Organization $organization): never => throw new RuntimeException('Expected test exception.'),
++        );
++
++    setPermissionsTeamId($organization);
++    $user->load(['permissions', 'roles']);
++
++    $response = get('/_test/permission-relations-exception/'.$organization->getRouteKey());
++
++    $response->assertServerError();
++    Exceptions::assertReported(RuntimeException::class);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull()
++        ->and($user->relationLoaded('permissions'))
++        ->toBeFalse()
++        ->and($user->relationLoaded('roles'))
++        ->toBeFalse();
++});
++
++it('does not leak loaded roles across tenant requests', function (): void {
++    $firstOrganization = Organization::factory()->createOne();
++    $secondOrganization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $firstOrganization);
++
++    $user->organizations()->syncWithoutDetaching($secondOrganization);
++
++    Route::middleware('web')
++        ->get('/_test/cross-tenant-role/{organization}', fn (Organization $organization): array => [
++            'authorized' => $user->canInOrganization($organization, Permission::OrganizationsView),
++        ]);
++
++    setPermissionsTeamId($firstOrganization);
++    $user->load('roles');
++
++    $response = get('/_test/cross-tenant-role/'.$secondOrganization->getRouteKey());
++
++    $response->assertExactJson([
++        'authorized' => false,
++    ]);
++
++    expect(getPermissionsTeamId())
++        ->toBeNull()
++        ->and($user->relationLoaded('roles'))
++        ->toBeFalse();
++});
++
++it('sets and clears the organization permission context for web requests', function (): void {
++    Route::middleware('web')
++        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
++            'organization_id' => getPermissionsTeamId(),
++        ]);
++
++    $organization = Organization::factory()->createOne();
++
++    $response = get('/_test/organizations/'.$organization->getRouteKey());
++
++    $response->assertExactJson([
++        'organization_id' => $organization->id,
++    ]);
++
++    expect(getPermissionsTeamId())->toBeNull();
++});
+diff --git a/tests/Feature/Models/OrganizationRouteKeyTest.php b/tests/Feature/Models/OrganizationRouteKeyTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Models/OrganizationRouteKeyTest.php
+@@ -0,0 +1,24 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\get;
++
++use App\Models\Organization;
++use Illuminate\Routing\Middleware\SubstituteBindings;
++use Illuminate\Support\Facades\Route;
++
++it('binds organizations by slug while retaining explicit sqid bindings', function (): void {
++    $organization = Organization::factory()->createOne();
++
++    Route::middleware(SubstituteBindings::class)
++        ->get('/_organization/{organization}', fn (Organization $organization): string => $organization->slug);
++
++    Route::middleware(SubstituteBindings::class)
++        ->get('/_sqid/{organization:sqid}', fn (Organization $organization): string => $organization->sqid);
++
++    get('/_organization/'.$organization->slug)->assertOk()->assertSeeText($organization->slug);
++    get('/_organization/'.$organization->sqid)->assertNotFound();
++    get('/_sqid/'.$organization->sqid)->assertOk()->assertSeeText($organization->sqid);
++    get('/_sqid/'.$organization->id)->assertNotFound();
++});
+diff --git a/tests/Integration/Actions/CreateOrganizationTest.php b/tests/Integration/Actions/CreateOrganizationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Actions/CreateOrganizationTest.php
+@@ -0,0 +1,38 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -596,6 +1471,7 @@ diff -ruN -U0 a/tests/Integration/Actions/CreateOrganizationTest.php b/tests/Int
 +    expect($organization)->toBeInstanceOf(Organization::class);
 +
 +    assertDatabaseHas(Organization::class, [
++        'id' => $organization->id,
 +        'name' => 'My Organization',
 +        'owner_id' => $user->id,
 +    ]);
@@ -605,13 +1481,15 @@ diff -ruN -U0 a/tests/Integration/Actions/CreateOrganizationTest.php b/tests/Int
 +    expect($user)
 +        ->current_organization_id->toBe($organization->id)
 +        ->belongsToOrganization($organization)->toBeTrue()
-+        ->and($organization->owner->is($user))->toBeTrue()
-+        ->and($organization->users)->toHaveCount(1);
++        ->and($organization)
++        ->owner->is($user)->toBeTrue()
++        ->users->toHaveCount(1);
 +});
-diff -ruN -U0 a/tests/Integration/Actions/UpdateOrganizationTest.php b/tests/Integration/Actions/UpdateOrganizationTest.php
---- a/tests/Integration/Actions/UpdateOrganizationTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Actions/UpdateOrganizationTest.php	2026-07-23 05:58:35
-@@ -0,0 +1,29 @@
+diff --git a/tests/Integration/Actions/UpdateOrganizationTest.php b/tests/Integration/Actions/UpdateOrganizationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Actions/UpdateOrganizationTest.php
+@@ -0,0 +1,47 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -622,7 +1500,7 @@ diff -ruN -U0 a/tests/Integration/Actions/UpdateOrganizationTest.php b/tests/Int
 +use App\Actions\Organizations\UpdateOrganization;
 +use App\Models\Organization;
 +
-+it('updates organization settings', function (): void {
++it('updates every supported organization field', function (): void {
 +    $organization = Organization::factory()->createOne([
 +        'name' => 'My Organization',
 +    ]);
@@ -637,65 +1515,127 @@ diff -ruN -U0 a/tests/Integration/Actions/UpdateOrganizationTest.php b/tests/Int
 +    expect($updatedOrganization->is($organization))->toBeTrue();
 +
 +    assertDatabaseHas(Organization::class, [
++        'id' => $organization->id,
 +        'name' => 'Updated Organization',
 +        'owner_id' => $organization->owner_id,
 +    ]);
 +});
-diff -ruN -U0 a/tests/Integration/Models/Concerns/HasPublicIdTest.php b/tests/Integration/Models/Concerns/HasPublicIdTest.php
---- a/tests/Integration/Models/Concerns/HasPublicIdTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Models/Concerns/HasPublicIdTest.php	2026-07-23 05:58:35
-@@ -0,0 +1,34 @@
-+<?php
 +
-+declare(strict_types=1);
++it('updates only provided organization fields', function (): void {
++    $organization = Organization::factory()->createOne([
++        'name' => 'My Organization',
++    ]);
 +
-+use App\Enums\NanoIDAlphabet;
-+use App\Models\Organization;
-+use Hidehalo\Nanoid\Client;
-+use Illuminate\Database\Eloquent\ModelNotFoundException;
-+use Mockery\MockInterface;
++    resolve(UpdateOrganization::class)->handle(
++        organization: $organization,
++        input: UpdateOrganizationInput::from([]),
++    );
 +
-+it('sets public id when creating', function (): void {
-+    $this->mock(Client::class, function (MockInterface $mock): void {
-+        $mock->shouldReceive('formattedId')
-+            ->once()
-+            ->with(NanoIDAlphabet::Alphanumeric(), 10)
-+            ->andReturn('abc123de45');
-+    });
-+
-+    $organization = Organization::factory()->createOne();
-+
-+    expect($organization)
-+        ->public_id->toBeString()
-+        ->public_id->toBe('abc123de45');
++    assertDatabaseHas(Organization::class, [
++        'id' => $organization->id,
++        'name' => 'My Organization',
++        'owner_id' => $organization->owner_id,
++    ]);
 +});
-+
-+it('throws 404 when organization is not found by public id', function (): void {
-+    Organization::findOrFailByPublicId('asdf');
-+})->throws(ModelNotFoundException::class);
-+
-+it('finds assigned public ids case insensitively through the database', function (): void {
-+    $organization = Organization::factory()->createOne(['public_id' => 'AbC123dE45']);
-+
-+    expect($organization->is(Organization::findByPublicId('abc123de45')))->toBeTrue();
-+});
-diff -ruN -U0 a/tests/Integration/Models/OrganizationTest.php b/tests/Integration/Models/OrganizationTest.php
---- a/tests/Integration/Models/OrganizationTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Models/OrganizationTest.php	2026-07-23 05:58:35
+diff --git a/tests/Integration/Http/Requests/StoreOrganizationRequestTest.php b/tests/Integration/Http/Requests/StoreOrganizationRequestTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Http/Requests/StoreOrganizationRequestTest.php
 @@ -0,0 +1,25 @@
 +<?php
 +
 +declare(strict_types=1);
 +
++use App\Http\Requests\StoreOrganizationRequest;
++use Illuminate\Support\Facades\Validator;
++
++it('accepts a valid organization', function (): void {
++    $validator = Validator::make(
++        ['name' => 'Acme Corporation'],
++        new StoreOrganizationRequest()->rules(),
++    );
++
++    expect($validator->passes())->toBeTrue();
++});
++
++it('rejects invalid organization data', function (array $data, string $field): void {
++    $validator = Validator::make($data, new StoreOrganizationRequest()->rules());
++
++    expect($validator->errors()->has($field))->toBeTrue();
++})->with([
++    'missing name' => [[], 'name'],
++    'name too long' => [['name' => str_repeat('a', 256)], 'name'],
++    'non-string name' => [['name' => ['Acme Corporation']], 'name'],
++]);
+diff --git a/tests/Integration/Http/Requests/UpdateOrganizationRequestTest.php b/tests/Integration/Http/Requests/UpdateOrganizationRequestTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Http/Requests/UpdateOrganizationRequestTest.php
+@@ -0,0 +1,25 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Http\Requests\UpdateOrganizationRequest;
++use Illuminate\Support\Facades\Validator;
++
++it('accepts valid organization updates', function (array $data): void {
++    $validator = Validator::make($data, new UpdateOrganizationRequest()->rules());
++
++    expect($validator->passes())->toBeTrue();
++})->with([
++    'name' => [['name' => 'Acme Corporation']],
++    'no fields' => [[]],
++]);
++
++it('rejects invalid organization updates', function (array $data, string $field): void {
++    $validator = Validator::make($data, new UpdateOrganizationRequest()->rules());
++
++    expect($validator->errors()->has($field))->toBeTrue();
++})->with([
++    'empty name' => [['name' => ''], 'name'],
++    'name too long' => [['name' => str_repeat('a', 256)], 'name'],
++    'non-string name' => [['name' => ['Acme Corporation']], 'name'],
++]);
+diff --git a/tests/Integration/Http/Resources/OrganizationResourceTest.php b/tests/Integration/Http/Resources/OrganizationResourceTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Http/Resources/OrganizationResourceTest.php
+@@ -0,0 +1,22 @@
++<?php
++
++declare(strict_types=1);
++
 +use App\Models\Organization;
 +
-+it('generates a slug when creating an organization', function (): void {
++it('formats resource correctly', function (): void {
 +    $organization = Organization::factory()->createOne([
-+        'name' => 'My Organization',
++        'name' => 'Acme Corporation',
++        'slug' => 'acme-corporation',
 +    ]);
 +
-+    expect($organization->slug)->toBe('my-organization');
++    $resource = json_decode($organization->toResource()->toJson(), true);
++
++    expect($resource)->toEqual([
++        'created_at' => $organization->created_at->toJSON(),
++        'id' => $organization->sqid,
++        'name' => 'Acme Corporation',
++        'slug' => 'acme-corporation',
++        'updated_at' => $organization->updated_at->toJSON(),
++    ]);
 +});
+diff --git a/tests/Integration/Models/OrganizationTest.php b/tests/Integration/Models/OrganizationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Models/OrganizationTest.php
+@@ -0,0 +1,56 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\assertDatabaseHas;
++
++use App\Models\Organization;
 +
 +it('does not regenerate the slug when the organization name changes', function (): void {
 +    $organization = Organization::factory()->createOne([
@@ -706,16 +1646,57 @@ diff -ruN -U0 a/tests/Integration/Models/OrganizationTest.php b/tests/Integratio
 +        'name' => 'Updated Organization',
 +    ]);
 +
-+    expect($organization->refresh()->slug)->toBe('my-organization');
++    assertDatabaseHas(Organization::class, [
++        'id' => $organization->id,
++        'name' => 'Updated Organization',
++        'slug' => 'my-organization',
++    ]);
 +});
-diff -ruN -U0 a/tests/Integration/Models/UserTest.php b/tests/Integration/Models/UserTest.php
---- a/tests/Integration/Models/UserTest.php	1969-12-31 18:00:00
-+++ b/tests/Integration/Models/UserTest.php	2026-07-23 05:58:35
-@@ -0,0 +1,59 @@
++
++it('exposes a computed sqid without storing it', function (): void {
++    $organization = Organization::factory()->createOne();
++
++    expect($organization->sqid)
++        ->toHaveLength(10)
++        ->and($organization->getAttributes())
++        ->not->toHaveKey('sqid')
++        ->and(Organization::findBySqid($organization->sqid)?->is($organization))
++        ->toBeTrue();
++});
++
++it('generates a slug when creating an organization', function (): void {
++    $organization = Organization::factory()->createOne([
++        'name' => 'My Organization',
++    ]);
++
++    assertDatabaseHas(Organization::class, [
++        'id' => $organization->id,
++        'slug' => 'my-organization',
++    ]);
++});
++
++it('uses the slug as its route key', function (): void {
++    $organization = Organization::factory()->createOne([
++        'name' => 'My Organization',
++    ]);
++
++    expect($organization->getRouteKey())
++        ->toBe('my-organization')
++        ->and($organization->getRouteKeyName())
++        ->toBe('slug');
++});
+diff --git a/tests/Integration/Models/UserTest.php b/tests/Integration/Models/UserTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Models/UserTest.php
+@@ -0,0 +1,123 @@
 +<?php
 +
 +declare(strict_types=1);
 +
++use function Pest\Laravel\assertDatabaseHas;
++
++use App\Enums\Permission;
 +use App\Models\Organization;
 +use App\Models\User;
 +
@@ -737,20 +1718,25 @@ diff -ruN -U0 a/tests/Integration/Models/UserTest.php b/tests/Integration/Models
 +    $userOrganization = Organization::factory()->for($user, 'owner')->createOne();
 +    $unrelatedOrganization = Organization::factory()->createOne();
 +
-+    expect($user->ownsOrganization($userOrganization))->toBeTrue()
-+        ->and($user->ownsOrganization($unrelatedOrganization))->toBeFalse();
++    expect($user)
++        ->ownsOrganization($userOrganization)->toBeTrue()
++        ->ownsOrganization($unrelatedOrganization)->toBeFalse();
 +});
 +
 +it('sets current_organization_id when loading currentOrganization if it not already set', function (): void {
 +    $user = User::factory()
 +        ->has(Organization::factory(), 'organizations')
 +        ->createOne();
++    $organization = $user->organizations()->sole();
 +
 +    expect($user->current_organization_id)->toBeNull();
 +
 +    $user->currentOrganization;
 +
-+    expect($user->fresh()->current_organization_id)->not->toBeNull();
++    assertDatabaseHas(User::class, [
++        'id' => $user->id,
++        'current_organization_id' => $organization->id,
++    ]);
 +});
 +
 +it('cannot switch to an unrelated organization', function (): void {
@@ -771,32 +1757,511 @@ diff -ruN -U0 a/tests/Integration/Models/UserTest.php b/tests/Integration/Models
 +        ->switchOrganization($organization)->toBeTrue()
 +        ->currentOrganization->is($organization)->toBeTrue();
 +});
-diff -ruN -U0 a/tests/Unit/Enums/NanoIDAlphabetTest.php b/tests/Unit/Enums/NanoIDAlphabetTest.php
---- a/tests/Unit/Enums/NanoIDAlphabetTest.php	1969-12-31 18:00:00
-+++ b/tests/Unit/Enums/NanoIDAlphabetTest.php	2026-07-23 05:58:35
-@@ -0,0 +1,9 @@
-+<?php
 +
-+declare(strict_types=1);
++it('denies organization permissions after membership is removed from a loaded user', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $organization);
 +
-+use App\Enums\NanoIDAlphabet;
++    setPermissionsTeamId($organization);
++    $user->load(['organizations', 'roles']);
++    $user->organizations()->detach($organization);
 +
-+it('defines the alphanumeric alphabet', function (): void {
-+    expect(NanoIDAlphabet::Alphanumeric())->toBe('abcdefghijklmnopqrstuvwxyz0123456789');
++    expect($user->canInOrganization($organization, Permission::OrganizationsView))
++        ->toBeFalse();
++
++    setPermissionsTeamId(null);
 +});
-diff -ruN -U0 a/tests/Unit/Models/OrganizationTest.php b/tests/Unit/Models/OrganizationTest.php
---- a/tests/Unit/Models/OrganizationTest.php	1969-12-31 18:00:00
-+++ b/tests/Unit/Models/OrganizationTest.php	2026-07-23 05:58:35
-@@ -0,0 +1,12 @@
++
++it('denies organization permissions without membership even for the owner', function (): void {
++    $user = User::factory()->createOne();
++    $organization = Organization::factory()->for($user, 'owner')->createOne();
++
++    setPermissionsTeamId($organization);
++
++    expect($user->canInOrganization($organization, Permission::OrganizationsView))
++        ->toBeFalse();
++
++    setPermissionsTeamId(null);
++});
++
++it('grants organization permissions to a member through a role', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++
++    expect($user->canInOrganization($organization, Permission::OrganizationsView))
++        ->toBeFalse();
++
++    setPermissionsTeamId($organization);
++
++    expect($user->canInOrganization($organization, Permission::OrganizationsView))
++        ->toBeTrue()
++        ->and($user->canInOrganization($organization, Permission::OrganizationsUpdateSettings))
++        ->toBeFalse();
++
++    setPermissionsTeamId(null);
++});
++
++it('grants organization permissions to an owner who is also a member without a role', function (): void {
++    $user = User::factory()->createOne();
++    $organization = Organization::factory()->for($user, 'owner')->createOne();
++
++    $user->organizations()->attach($organization);
++    setPermissionsTeamId($organization);
++
++    expect($user->canInOrganization($organization, Permission::OrganizationsView))
++        ->toBeTrue();
++
++    setPermissionsTeamId(null);
++});
+diff --git a/tests/Integration/Policies/OrganizationPolicyTest.php b/tests/Integration/Policies/OrganizationPolicyTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Policies/OrganizationPolicyTest.php
+@@ -0,0 +1,49 @@
 +<?php
 +
 +declare(strict_types=1);
 +
-+use App\Models\Concerns\HasPublicId;
++use App\Enums\Permission;
 +use App\Models\Organization;
++use App\Models\User;
++use App\Policies\OrganizationPolicy;
 +
-+it('uses HasPublicId trait', function (): void {
++afterEach(function (): void {
++    setPermissionsTeamId(null);
++});
++
++it('allows any user to create organizations', function (): void {
++    $user = User::factory()->createOne();
++
++    expect(new OrganizationPolicy()->create($user))->toBeTrue();
++});
++
++it('allows members with the required permission', function (string $ability, Permission $permission): void {
++    $organization = Organization::factory()->createOne();
++    $user = loginWithPermission($permission, $organization);
++
++    setPermissionsTeamId($organization);
++
++    expect($user->can($ability, $organization))->toBeTrue();
++})->with([
++    'update' => ['update', Permission::OrganizationsUpdateSettings],
++    'view' => ['view', Permission::OrganizationsView],
++]);
++
++it('denies members without the required permission', function (string $ability, Permission $permission): void {
++    $organization = Organization::factory()->createOne();
++    $user = loginWithPermission($permission, $organization);
++
++    setPermissionsTeamId($organization);
++
++    expect($user->can($ability, $organization))->toBeFalse();
++})->with([
++    'update' => ['update', Permission::OrganizationsView],
++    'view' => ['view', Permission::OrganizationsUpdateSettings],
++]);
++
++it('denies members outside the organization permission context', function (): void {
++    $organization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $organization);
++
++    expect($user->can('view', $organization))->toBeFalse();
++});
+diff --git a/tests/Integration/Seeders/LocalSeederTest.php b/tests/Integration/Seeders/LocalSeederTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Seeders/LocalSeederTest.php
+@@ -0,0 +1,19 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\User;
++use Database\Seeders\LocalSeeder;
++
++it('seeds a test user with owned organizations', function (): void {
++    $this->seed(LocalSeeder::class);
++
++    $user = User::query()->where('email', 'test@example.com')->sole();
++
++    expect($user->organizations)
++        ->toHaveCount(2)
++        ->and($user->organizations->pluck('name'))
++        ->toContain('Local')
++        ->and($user->ownedOrganizations->modelKeys())
++        ->toEqualCanonicalizing($user->organizations->modelKeys());
++});
+diff --git a/tests/Integration/Seeders/RolesAndPermissionsSeederTest.php b/tests/Integration/Seeders/RolesAndPermissionsSeederTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Seeders/RolesAndPermissionsSeederTest.php
+@@ -0,0 +1,105 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\OrganizationRole;
++use App\Enums\Permission;
++use App\Models\Organization;
++use Database\Seeders\RolesAndPermissionsSeeder;
++use Illuminate\Cache\CacheManager;
++use Spatie\Permission\Models\Permission as PermissionModel;
++use Spatie\Permission\Models\Role as RoleModel;
++use Spatie\Permission\PermissionRegistrar;
++
++afterEach(function (): void {
++    setPermissionsTeamId(null);
++});
++
++it('seeds the exact global catalog and mappings', function (): void {
++    $this->seed(RolesAndPermissionsSeeder::class);
++
++    $permissions = PermissionModel::query()
++        ->orderBy('name')
++        ->get();
++    $roles = RoleModel::query()
++        ->whereNull('organization_id')
++        ->orderBy('name')
++        ->get();
++
++    expect($permissions)
++        ->toHaveCount(2)
++        ->and($permissions->pluck('guard_name')->unique()->all())
++        ->toBe(['web'])
++        ->and($permissions->pluck('name')->all())
++        ->toEqualCanonicalizing(Permission::values())
++        ->and($roles)
++        ->toHaveCount(2)
++        ->and($roles->pluck('guard_name')->unique()->all())
++        ->toBe(['web'])
++        ->and($roles->pluck('name')->all())
++        ->toBe(OrganizationRole::values());
++
++    foreach (OrganizationRole::cases() as $organizationRole) {
++        $role = $roles->firstWhere('name', $organizationRole->value);
++        $expectedPermissions = array_map(
++            static fn (Permission $permission): string => $permission->value,
++            $organizationRole->permissions(),
++        );
++
++        expect($role)
++            ->not->toBeNull()
++            ->and($role->permissions()->orderBy('name')->pluck('name')->all())
++            ->toEqualCanonicalizing($expectedPermissions);
++    }
++});
++
++it('seeds idempotently without creating tenant roles and restores the team context', function (): void {
++    $organization = Organization::factory()->createOne();
++
++    setPermissionsTeamId($organization);
++
++    $this->seed(RolesAndPermissionsSeeder::class);
++
++    $auditor = RoleModel::query()
++        ->where('guard_name', 'web')
++        ->where('name', OrganizationRole::Auditor->value)
++        ->whereNull('organization_id')
++        ->sole();
++
++    $auditor->givePermissionTo(Permission::OrganizationsUpdateSettings);
++
++    expect($auditor->hasPermissionTo(Permission::OrganizationsUpdateSettings))
++        ->toBeTrue();
++
++    $this->seed(RolesAndPermissionsSeeder::class);
++
++    $auditor->refresh();
++
++    expect(getPermissionsTeamId())
++        ->toBe($organization->id)
++        ->and(PermissionModel::query()->count())
++        ->toBe(2)
++        ->and(RoleModel::query()->whereNull('organization_id')->count())
++        ->toBe(2)
++        ->and(RoleModel::query()->where('organization_id', $organization->id)->count())
++        ->toBe(0)
++        ->and($auditor->hasPermissionTo(Permission::OrganizationsUpdateSettings))
++        ->toBeFalse();
++});
++
++it('restores the team context when permission cache clearing fails', function (): void {
++    $organization = Organization::factory()->createOne();
++    $permissionRegistrar = new class (resolve(CacheManager::class)) extends PermissionRegistrar {
++        public function forgetCachedPermissions(): bool
++        {
++            throw new RuntimeException('Expected cache failure.');
++        }
++    };
++
++    $permissionRegistrar->setPermissionsTeamId($organization);
++
++    expect(fn (): mixed => resolve(RolesAndPermissionsSeeder::class)->run($permissionRegistrar))
++        ->toThrow(RuntimeException::class, 'Expected cache failure.')
++        ->and($permissionRegistrar->getPermissionsTeamId())
++        ->toBe($organization->id);
++});
+diff --git a/tests/Integration/Support/OrganizationPermissionContextTest.php b/tests/Integration/Support/OrganizationPermissionContextTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Integration/Support/OrganizationPermissionContextTest.php
+@@ -0,0 +1,86 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\Permission;
++use App\Models\Organization;
++use App\Support\OrganizationPermissionContext;
++
++afterEach(function (): void {
++    setPermissionsTeamId(null);
++});
++
++it('restores nested organization contexts and permission relations', function (): void {
++    $firstOrganization = Organization::factory()->createOne();
++    $previousOrganization = Organization::factory()->createOne();
++    $secondOrganization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $firstOrganization);
++
++    $user->organizations()->syncWithoutDetaching($secondOrganization);
++    setPermissionsTeamId($previousOrganization);
++
++    $organizationPermissionContext = resolve(OrganizationPermissionContext::class);
++
++    $result = $organizationPermissionContext->run(
++        $user,
++        $firstOrganization,
++        function () use (
++            $firstOrganization,
++            $organizationPermissionContext,
++            $secondOrganization,
++            $user,
++        ): string {
++            expect(getPermissionsTeamId())
++                ->toBe($firstOrganization->id)
++                ->and($user->canInOrganization($firstOrganization, Permission::OrganizationsView))
++                ->toBeTrue();
++
++            $organizationPermissionContext->run(
++                $user,
++                $secondOrganization,
++                function () use ($secondOrganization, $user): void {
++                    expect(getPermissionsTeamId())
++                        ->toBe($secondOrganization->id)
++                        ->and($user->canInOrganization($secondOrganization, Permission::OrganizationsView))
++                        ->toBeFalse();
++                },
++            );
++
++            expect(getPermissionsTeamId())
++                ->toBe($firstOrganization->id)
++                ->and($user->canInOrganization($firstOrganization, Permission::OrganizationsView))
++                ->toBeTrue();
++
++            return 'nested-result';
++        },
++    );
++
++    expect($result)
++        ->toBe('nested-result')
++        ->and(getPermissionsTeamId())
++        ->toBe($previousOrganization->id)
++        ->and($user->relationLoaded('permissions'))
++        ->toBeFalse()
++        ->and($user->relationLoaded('roles'))
++        ->toBeFalse();
++});
++
++it('restores the previous context and relations when the callback throws', function (): void {
++    $previousOrganization = Organization::factory()->createOne();
++    $targetOrganization = Organization::factory()->createOne();
++    $user = loginWithPermission(Permission::OrganizationsView, $previousOrganization);
++
++    setPermissionsTeamId($previousOrganization);
++    $user->load(['permissions', 'roles']);
++
++    $organizationPermissionContext = resolve(OrganizationPermissionContext::class);
++
++    expect(fn (): mixed => $organizationPermissionContext->run(
++        $user,
++        $targetOrganization,
++        static fn (): never => throw new RuntimeException('Expected test exception.'),
++    ))->toThrow(RuntimeException::class, 'Expected test exception.')
++        ->and(getPermissionsTeamId())->toBe($previousOrganization->id)
++        ->and($user->relationLoaded('permissions'))->toBeFalse()
++        ->and($user->relationLoaded('roles'))->toBeFalse();
++});
+diff --git a/tests/Pest.php b/tests/Pest.php
+--- a/tests/Pest.php
++++ b/tests/Pest.php
+@@ -7,1 +7,2 @@
+-
++
++use App\Enums\Permission;
+@@ -8,1 +9,3 @@
+-use App\Models\User;
++use App\Models\Organization;
++use App\Models\User;
++use Database\Factories\UserFactory;
+@@ -10,1 +13,4 @@
+-use Tests\TestCase;
++use Spatie\Permission\Models\Permission as PermissionModel;
++use Spatie\Permission\Models\Role as RoleModel;
++use Spatie\Permission\PermissionRegistrar;
++use Tests\TestCase;
+@@ -26,1 +32,1 @@
+-function login(null|Authenticatable $user = null): User
++function login(null|Authenticatable $user = null, null|Organization $organization = null): User
+@@ -28,1 +34,45 @@
+-    $user ??= User::factory()->createOne();
++    $user ??= User::factory()
++        ->when($organization, function (UserFactory $factory, Organization $organization): UserFactory {
++            return $factory->withOrganization($organization);
++        })
++        ->createOne();
++
++    actingAs($user);
++
++    return $user;
++}
++
++function loginWithPermission(
++    Permission $permission,
++    Organization $organization,
++    null|User $user = null,
++): User {
++    $user ??= User::factory()->withOrganization($organization)->createOne();
++    $user->organizations()->syncWithoutDetaching($organization);
++
++    $permissionRegistrar = resolve(PermissionRegistrar::class);
++    $previousTeamId = $permissionRegistrar->getPermissionsTeamId();
++
++    $permissionRegistrar->setPermissionsTeamId(null);
++
++    try {
++        $permissionModel = PermissionModel::findOrCreate($permission, 'web');
++        $roleName = sprintf('test-%s', $permission->value);
++
++        RoleModel::findOrCreate($roleName, 'web');
++
++        $role = RoleModel::query()
++            ->where('guard_name', 'web')
++            ->where('name', $roleName)
++            ->whereNull($permissionRegistrar->teamsKey)
++            ->sole();
++
++        $role->syncPermissions($permissionModel);
++
++        $permissionRegistrar->setPermissionsTeamId($organization);
++        $user->assignRole($role);
++    } finally {
++        $permissionRegistrar->setPermissionsTeamId($previousTeamId);
++        $user->unsetRelation('permissions');
++        $user->unsetRelation('roles');
++    }
+diff --git a/tests/Unit/Enums/OrganizationRoleTest.php b/tests/Unit/Enums/OrganizationRoleTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Unit/Enums/OrganizationRoleTest.php
+@@ -0,0 +1,31 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\OrganizationRole;
++use App\Enums\Permission;
++
++it('defines the exact organization roles', function (): void {
++    expect(OrganizationRole::values())->toBe([
++        'auditor',
++        'organization-admin',
++    ]);
++});
++
++it('defines the exact permission mapping', function (OrganizationRole $role): void {
++    $expectedPermissions = match ($role) {
++        OrganizationRole::Auditor => [
++            Permission::OrganizationsView,
++        ],
++        OrganizationRole::OrganizationAdmin => Permission::cases(),
++    };
++
++    expect($role->permissions())->toEqualCanonicalizing($expectedPermissions);
++})->with(OrganizationRole::cases());
++
++it('defines unique organization role values', function (): void {
++    expect(OrganizationRole::values())
++        ->toHaveCount(2)
++        ->and(array_unique(OrganizationRole::values()))
++        ->toHaveCount(2);
++});
+diff --git a/tests/Unit/Enums/PermissionTest.php b/tests/Unit/Enums/PermissionTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Unit/Enums/PermissionTest.php
+@@ -0,0 +1,19 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Enums\Permission;
++
++it('defines the exact permission catalog', function (): void {
++    expect(Permission::values())->toBe([
++        'organizations.update-settings',
++        'organizations.view',
++    ]);
++});
++
++it('defines unique permission values', function (): void {
++    expect(Permission::values())
++        ->toHaveCount(2)
++        ->and(array_unique(Permission::values()))
++        ->toHaveCount(2);
++});
+diff --git a/tests/Unit/Models/OrganizationTest.php b/tests/Unit/Models/OrganizationTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Unit/Models/OrganizationTest.php
+@@ -0,0 +1,24 @@
++<?php
++
++declare(strict_types=1);
++
++use App\Models\Concerns\HasSqid;
++use App\Models\Organization;
++use Carbon\CarbonImmutable;
++
++it('uses HasSqid trait', function (): void {
 +    $traits = class_uses_recursive(Organization::class);
 +
-+    expect($traits)->toContain(HasPublicId::class);
++    expect($traits)->toContain(HasSqid::class);
 +});
++
++it('correctly casts attributes', function (): void {
++    $organization = new Organization([
++        'created_at' => '2025-09-06 02:53:10',
++        'updated_at' => '2025-09-06 02:53:10',
++    ]);
++
++    expect($organization)
++        ->created_at->toBeInstanceOf(CarbonImmutable::class)
++        ->updated_at->toBeInstanceOf(CarbonImmutable::class);
++});
+diff --git a/tests/Unit/Models/UserTest.php b/tests/Unit/Models/UserTest.php
+--- a/tests/Unit/Models/UserTest.php
++++ b/tests/Unit/Models/UserTest.php
+@@ -5,1 +5,2 @@
+-use App\Models\User;
++use App\Models\Concerns\HasSqid;
++use App\Models\User;
+@@ -10,1 +11,7 @@
+-it('correctly casts attributes', function (): void {
++it('uses HasSqid trait', function (): void {
++    $traits = class_uses_recursive(User::class);
++
++    expect($traits)->toContain(HasSqid::class);
++});
++
++it('correctly casts attributes', function (): void {

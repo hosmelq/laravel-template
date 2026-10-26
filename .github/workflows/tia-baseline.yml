@@ -1,0 +1,62 @@
+name: Pest TIA baseline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+env:
+  PHP_VERSION: '8.5'
+
+jobs:
+  baseline:
+    name: Build Pest TIA baseline
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare composer dependencies
+        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
+        with:
+          php-coverage: pcov
+          php-tools: ''
+          php-version: ${{ env.PHP_VERSION }}
+
+      - name: Setup problem matchers
+        run: |
+          echo "::add-matcher::${{ runner.tool_cache }}/php.json"
+          echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
+
+      - name: Setup testing environment
+        run: |
+          cp .env.testing.example .env.testing
+          php artisan key:generate --env=testing
+
+      - name: Build Pest TIA baseline
+        run: ./scripts/test --ci --tia --fresh
+
+      - name: Resolve Pest TIA baseline path
+        id: baseline
+        run: echo "path=$(./vendor/bin/pest --baseline)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Pest TIA baseline
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          include-hidden-files: true
+          if-no-files-found: error
+          name: pest-tia-baseline
+          path: ${{ steps.baseline.outputs.path }}
+          retention-days: 7

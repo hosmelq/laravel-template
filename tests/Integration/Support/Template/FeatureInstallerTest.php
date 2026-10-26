@@ -21,6 +21,7 @@ it('applies every selected patch as one group and removes the installer after ag
     });
 
     $files = $this->mock(Filesystem::class);
+    $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
     $files->expects('delete')
         ->with([
             base_path('.github/workflows/template.yml'),
@@ -91,6 +92,21 @@ it('applies every selected patch as one group and removes the installer after ag
             resource_path('template/patches/organizations.patch'),
         ],
         [
+            'git',
+            'apply',
+            '--check',
+            '--unidiff-zero',
+            resource_path('template/patches/authentication+frontend.patch'),
+            resource_path('template/patches/frontend+organizations.patch'),
+        ],
+        [
+            'git',
+            'apply',
+            '--unidiff-zero',
+            resource_path('template/patches/authentication+frontend.patch'),
+            resource_path('template/patches/frontend+organizations.patch'),
+        ],
+        [
             'composer',
             'update',
             '--minimal-changes',
@@ -99,24 +115,74 @@ it('applies every selected patch as one group and removes the installer after ag
             '--with-all-dependencies',
         ],
         [
+            'composer',
+            'normalize',
+            '--no-interaction',
+        ],
+        [
             PHP_BINARY,
             'artisan',
             'package:discover',
             '--ansi',
         ],
-        ['mise', 'run', 'agent:setup'],
+        ['mise', 'run', 'setup:agent'],
     ])
         ->and(array_slice($operations, -3))->toEqual([
-            'process:mise run agent:setup',
+            'process:mise run setup:agent',
             'delete:files',
             'delete:directory',
         ]);
+});
+
+it('applies combination patches only when every combined feature is selected', function (): void {
+    $commands = [];
+
+    Process::fake(function (PendingProcess $process) use (&$commands): FakeProcessResult {
+        $commands[] = $process->command;
+
+        return Process::result();
+    });
+
+    $files = $this->mock(Filesystem::class);
+    $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
+    $files->expects('delete')->once()->andReturnTrue();
+    $files->expects('isDirectory')->times(6)->andReturnFalse();
+    $files->expects('deleteDirectory')->with(resource_path('template'))->once()->andReturnTrue();
+
+    resolve(FeatureInstaller::class)->install([
+        TemplateFeature::Frontend,
+        TemplateFeature::Authentication,
+    ]);
+
+    expect(array_slice($commands, 1, 3))->toEqual([
+        [
+            'git',
+            'apply',
+            '--unidiff-zero',
+            resource_path('template/patches/frontend.patch'),
+            resource_path('template/patches/authentication.patch'),
+        ],
+        [
+            'git',
+            'apply',
+            '--check',
+            '--unidiff-zero',
+            resource_path('template/patches/authentication+frontend.patch'),
+        ],
+        [
+            'git',
+            'apply',
+            '--unidiff-zero',
+            resource_path('template/patches/authentication+frontend.patch'),
+        ],
+    ]);
 });
 
 it('preserves non-empty directories when removing the installer', function (): void {
     Process::fake();
 
     $files = $this->mock(Filesystem::class);
+    $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
     $files->expects('delete')
         ->once()
         ->andReturnTrue();
@@ -138,7 +204,7 @@ it('preserves non-empty directories when removing the installer', function (): v
 
 it('preserves the installer when agent setup fails', function (): void {
     Process::fake(function (PendingProcess $process): FakeProcessResult {
-        if ($process->command === ['mise', 'run', 'agent:setup']) {
+        if ($process->command === ['mise', 'run', 'setup:agent']) {
             return Process::result(
                 errorOutput: 'Agent setup failed.',
                 exitCode: 1
@@ -149,6 +215,7 @@ it('preserves the installer when agent setup fails', function (): void {
     });
 
     $files = $this->mock(Filesystem::class);
+    $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
     $files->shouldNotReceive('delete');
     $files->shouldNotReceive('deleteDirectory');
 
@@ -163,4 +230,44 @@ it('does not add unselected features to organizations', function (): void {
     ]))->toEqual([
         TemplateFeature::Organizations,
     ]);
+});
+
+it('builds frontend assets before agent setup and installer cleanup', function (): void {
+    $commands = [];
+
+    Process::fake(function (PendingProcess $process) use (&$commands): FakeProcessResult {
+        $commands[] = $process->command;
+
+        return Process::result();
+    });
+
+    $files = $this->mock(Filesystem::class);
+    $files->expects('isFile')->with(base_path('package.json'))->andReturnTrue();
+    $files->expects('delete')->once()->andReturnTrue();
+    $files->expects('isDirectory')->times(6)->andReturnFalse();
+    $files->expects('deleteDirectory')->with(resource_path('template'))->once()->andReturnTrue();
+
+    resolve(FeatureInstaller::class)->install([TemplateFeature::Frontend]);
+
+    expect(array_slice($commands, -3))->toEqual([
+        ['nub', 'install'],
+        ['nub', 'run', 'build'],
+        ['mise', 'run', 'setup:agent'],
+    ]);
+});
+
+it('preserves the installer when the frontend build fails', function (): void {
+    Process::fake(function (PendingProcess $process): FakeProcessResult {
+        return $process->command === ['nub', 'run', 'build']
+            ? Process::result(errorOutput: 'Build failed.', exitCode: 1)
+            : Process::result();
+    });
+
+    $files = $this->mock(Filesystem::class);
+    $files->expects('isFile')->with(base_path('package.json'))->andReturnTrue();
+    $files->shouldNotReceive('delete');
+    $files->shouldNotReceive('deleteDirectory');
+
+    expect(fn () => resolve(FeatureInstaller::class)->install([TemplateFeature::Frontend]))
+        ->toThrow(RuntimeException::class, "The frontend assets could not be built.\nBuild failed.");
 });

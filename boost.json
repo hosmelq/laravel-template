@@ -7,13 +7,15 @@
     "mcp": true,
     "nightwatch": false,
     "packages": [
-        "fruitcake/laravel-debugbar"
+        "fruitcake/laravel-debugbar",
+        "pestphp/pest-plugin-agent"
     ],
     "sail": false,
     "skills": [
         "infer-conventions",
         "laravel-best-practices",
-        "pest-testing",
-        "debug-using-debugbar"
+        "testing-best-practices",
+        "debug-using-debugbar",
+        "pest-plugin-agent"
     ]
 }

@@ -5,6 +5,7 @@
         bootstrap="vendor/autoload.php"
         cacheDirectory=".cache/phpunit"
         colors="true"
+        failOnPhpunitWarning="true"
 >
     <testsuites>
         <testsuite name="Architecture">

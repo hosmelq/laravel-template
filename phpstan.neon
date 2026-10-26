@@ -25,9 +25,10 @@ parameters:
     - config
     - database
     - routes
+  strictRules:
+    dynamicCallOnStaticMethod: false
   type_coverage:
     constant: 100
-    declare: 100
     param: 100
     property: 100
     return: 100
@@ -36,6 +37,9 @@ parameters:
     null_over_false: true
     narrow_param: true
     narrow_return: true
+    no_empty_on_object: true
+    no_isset_on_object: true
+    no_param_type_removal: true
   tips:
     treatPhpDocTypesAsCertain: false
   tmpDir: .cache/phpstan

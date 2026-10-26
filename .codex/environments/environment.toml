@@ -1,0 +1,10 @@
+name = "Testing"
+
+version = 1
+
+[setup]
+script = '''
+set -e
+
+mise run setup
+'''

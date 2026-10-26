@@ -1,0 +1,10 @@
+scripts:
+  archive: |
+    mise run services:destroy
+  setup: |
+    export COMPOSE_DB_PORT=0
+    export COMPOSE_MAIL_PORT=0
+    export COMPOSE_MAILPIT_PORT=0
+
+    mise run setup
+setupAgentStartupPolicy: wait-for-setup

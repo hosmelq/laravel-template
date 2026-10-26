@@ -16,6 +16,13 @@ pest()
     })
     ->in('Feature', 'Integration', 'Unit');
 
+pest()
+    ->tia()
+    ->always()
+    ->baselined()
+    ->defaultBranch('main')
+    ->locally();
+
 function login(null|Authenticatable $user = null): User
 {
     $user ??= User::factory()->createOne();

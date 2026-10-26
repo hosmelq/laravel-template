@@ -1,0 +1,47 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Fixtures;
+
+class InvalidTypes implements Consumer
+{
+    public function consume($value): void {}
+
+    public function usesMixed(mixed $value): void
+    {
+        $value->run();
+        $property = $value->name;
+    }
+
+    public function checksEmpty(?BroadValue $value): bool
+    {
+        return empty($value);
+    }
+
+    public function checksIsset(?BroadValue $value): bool
+    {
+        return isset($value);
+    }
+
+    public function build(): \Tests\Fixtures\BroadValue
+    {
+        return new SpecificValue();
+    }
+
+    public function call(): void
+    {
+        $this->accept(new SpecificValue());
+    }
+
+    private function accept(\Tests\Fixtures\BroadValue $value): void {}
+}
+
+class BroadValue {}
+
+class SpecificValue extends BroadValue {}
+
+interface Consumer
+{
+    public function consume(string $value): void;
+}

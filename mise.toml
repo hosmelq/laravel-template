@@ -1,14 +1,45 @@
+min_version = "2026.9.15"
+
 [bootstrap.packages]
-# cc and make are provided by Xcode Command Line Tools: xcode-select --install
+# Linux packages used by the PHP source build.
+"apt:autoconf" = { os = "linux", version = "latest" }
+"apt:bison" = { os = "linux", version = "latest" }
+"apt:build-essential" = { os = "linux", version = "latest" }
+"apt:libbz2-dev" = { os = "linux", version = "latest" }
+"apt:libcurl4-openssl-dev" = { os = "linux", version = "latest" }
+"apt:libfreetype6-dev" = { os = "linux", version = "latest" }
+"apt:libgd-dev" = { os = "linux", version = "latest" }
+"apt:libgmp-dev" = { os = "linux", version = "latest" }
+"apt:libicu-dev" = { os = "linux", version = "latest" }
+"apt:libjpeg-dev" = { os = "linux", version = "latest" }
+"apt:libonig-dev" = { os = "linux", version = "latest" }
+"apt:libpng-dev" = { os = "linux", version = "latest" }
+"apt:libpq-dev" = { os = "linux", version = "latest" }
+"apt:libreadline-dev" = { os = "linux", version = "latest" }
+"apt:libsodium-dev" = { os = "linux", version = "latest" }
+"apt:libsqlite3-dev" = { os = "linux", version = "latest" }
+"apt:libssl-dev" = { os = "linux", version = "latest" }
+"apt:libwebp-dev" = { os = "linux", version = "latest" }
+"apt:libxml2-dev" = { os = "linux", version = "latest" }
+"apt:libzip-dev" = { os = "linux", version = "latest" }
+"apt:pkg-config" = { os = "linux", version = "latest" }
+"apt:re2c" = { os = "linux", version = "latest" }
+"apt:zlib1g-dev" = { os = "linux", version = "latest" }
+
+# macOS also requires Xcode Command Line Tools: xcode-select --install
 "brew:autoconf" = { os = "macos", version = "latest" }
 "brew:bison" = { os = "macos", version = "latest" }
+"brew:bzip2" = { os = "macos", version = "latest" }
 "brew:curl" = { os = "macos", version = "latest" }
 "brew:freetype" = { os = "macos", version = "latest" }
+"brew:gettext" = { os = "macos", version = "latest" }
+"brew:gmp" = { os = "macos", version = "latest" }
 "brew:icu4c@78" = { os = "macos", version = "latest" }
 "brew:jpeg-turbo" = { os = "macos", version = "latest" }
 "brew:libiconv" = { os = "macos", version = "latest" }
 "brew:libpng" = { os = "macos", version = "latest" }
 "brew:libpq" = { os = "macos", version = "latest" }
+"brew:libsodium" = { os = "macos", version = "latest" }
 "brew:libxml2" = { os = "macos", version = "latest" }
 "brew:libzip" = { os = "macos", version = "latest" }
 "brew:oniguruma" = { os = "macos", version = "latest" }
@@ -16,39 +47,67 @@
 "brew:pkgconf" = { os = "macos", version = "latest" }
 "brew:readline" = { os = "macos", version = "latest" }
 "brew:re2c" = { os = "macos", version = "latest" }
+"brew:sqlite" = { os = "macos", version = "latest" }
 "brew:webp" = { os = "macos", version = "latest" }
+"brew:zlib" = { os = "macos", version = "latest" }
 
 [hooks]
-enter = "mise install"
+enter = "mise bootstrap"
 
 [settings]
-minimum_release_age = "1d"
+lockfile = true
 
-[tasks."agent:setup"]
-description = "Runs project agent setup."
+[tasks."db:fresh"]
+description = "Recreates and seeds the database."
+run = "php artisan migrate:fresh --seed"
+
+[tasks.dev]
+depends = ["services:start"]
+description = "Starts the development environment."
+run = "php artisan dev"
+
+[tasks."services:destroy"]
+description = "Stops local Docker services and removes their data."
+run = "docker compose down --remove-orphans --volumes"
+
+[tasks."services:start"]
+description = "Starts local Docker services."
+run = "scripts/services-start"
+
+[tasks."services:stop"]
+description = "Stops local Docker services."
+run = "docker compose down --remove-orphans"
+
+[tasks.setup]
+depends = ["setup:ci"]
+description = "Sets up the project for local development."
+run = ["mise run setup:agent", "mise run services:start", "php artisan migrate --force"]
+
+[tasks."setup:agent"]
+description = "Installs agent guidelines and skills."
 run = [
   "php artisan boost:install --ansi --env=local --guidelines --mcp --no-interaction --skills",
   "nubx -y skills experimental_install",
 ]
 
-[tasks."db:fresh"]
-description = "Runs migrate:fresh and db:seed."
-run = "php artisan migrate:fresh --seed"
-
-[tasks.dev]
-description = "Starts the application development processes."
-run = "php artisan dev"
-
-[tasks.setup]
-description = "Installs dependencies, prepares environment files and keys, and runs migrations."
+[tasks."setup:install"]
+description = "Installs dependencies and prepares environment files."
 run = [
   "composer install",
-  "test -f .env || (cp .env.example .env && php artisan key:generate)",
-  "test -f .env.testing || (cp .env.testing.example .env.testing && php artisan key:generate --env=testing)",
-  "php artisan migrate --force",
+  "php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+  "php -r \"file_exists('.env.testing') || copy('.env.testing.example', '.env.testing');\"",
+  "grep -q '^APP_KEY=.' .env || php artisan key:generate",
+  "grep -q '^APP_KEY=.' .env.testing || php artisan key:generate --env=testing",
+  "lefthook install",
 ]
 
+[tasks."setup:ci"]
+depends = ["setup:install"]
+description = "Prepares the application without local services or migrations."
+run = "php artisan package:discover --ansi"
+
 [tools]
-node = "26"
-nub = "0.7.5"
+lefthook = "2.2.2"
+node = "26.10.0"
+nub = "0.9.5"
 php = { install_env = { PHP_EXTRA_CONFIGURE_OPTIONS = "--with-zip" }, version = "8.5" }

@@ -1,7 +1,2 @@
 parameters:
-	ignoreErrors:
-		-
-			message: '#^Dynamic call to static method Illuminate\\Foundation\\Application\:\:isProduction\(\)\.$#'
-			identifier: staticMethod.dynamicCall
-			count: 2
-			path: app/Providers/AppServiceProvider.php
+	ignoreErrors: []

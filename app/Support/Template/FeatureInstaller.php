@@ -26,17 +26,20 @@ class FeatureInstaller
             return;
         }
 
-        $patches = array_map(
-            $this->patchPath(...),
-            $features
-        );
+        $patches = array_map($this->patchPath(...), $features);
 
         foreach ($patches as $patch) {
             throw_unless(is_file($patch), RuntimeException::class, 'Patch not found: '.$patch);
         }
 
-        $this->run(['git', 'apply', '--check', '--unidiff-zero', ...$patches], 'Unable to apply the selected features.');
-        $this->run(['git', 'apply', '--unidiff-zero', ...$patches], 'Unable to apply the selected features.');
+        $this->applyPatches($patches);
+
+        $combinationPatches = $this->combinationPatches($features);
+
+        if ($combinationPatches !== []) {
+            $this->applyPatches($combinationPatches);
+        }
+
         $this->installDependencies();
         $this->deleteTemplateArtifacts();
     }
@@ -52,6 +55,40 @@ class FeatureInstaller
             $features,
             fn (TemplateFeature $feature): bool => ! $this->isInstalled($feature)
         ));
+    }
+
+    /**
+     * @param list<string> $patches
+     */
+    private function applyPatches(array $patches): void
+    {
+        $this->run(['git', 'apply', '--check', '--unidiff-zero', ...$patches], 'Unable to apply the selected features.');
+        $this->run(['git', 'apply', '--unidiff-zero', ...$patches], 'Unable to apply the selected features.');
+    }
+
+    /**
+     * @param list<TemplateFeature> $features
+     *
+     * @return list<string>
+     */
+    private function combinationPatches(array $features): array
+    {
+        $featureNames = array_column($features, 'value');
+        $combinationPatches = [];
+
+        sort($featureNames);
+
+        foreach ($featureNames as $index => $firstFeatureName) {
+            foreach (array_slice($featureNames, $index + 1) as $secondFeatureName) {
+                $patch = resource_path(sprintf('template/patches/%s+%s.patch', $firstFeatureName, $secondFeatureName));
+
+                if (is_file($patch)) {
+                    $combinationPatches[] = $patch;
+                }
+            }
+        }
+
+        return $combinationPatches;
     }
 
     private function deleteEmptyTemplateDirectories(): bool
@@ -116,17 +153,24 @@ class FeatureInstaller
         ], 'Composer could not install the selected features.', forever: true);
 
         $this->run([
+            'composer',
+            'normalize',
+            '--no-interaction',
+        ], 'Composer could not normalize the composer.json file.', forever: true);
+
+        $this->run([
             PHP_BINARY,
             'artisan',
             'package:discover',
             '--ansi',
         ], 'Laravel could not discover the installed packages.');
 
-        if (is_file(base_path('package.json'))) {
+        if ($this->files->isFile(base_path('package.json'))) {
             $this->run(['nub', 'install'], 'The frontend dependencies could not be installed.', forever: true);
+            $this->run(['nub', 'run', 'build'], 'The frontend assets could not be built.', forever: true);
         }
 
-        $this->run(['mise', 'run', 'agent:setup'], 'The agent setup could not be completed.', forever: true);
+        $this->run(['mise', 'run', 'setup:agent'], 'The agent setup could not be completed.', forever: true);
     }
 
     private function isInstalled(TemplateFeature $feature): bool

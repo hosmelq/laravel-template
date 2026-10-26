@@ -25,3 +25,13 @@ it('correctly casts attributes', function (): void {
         ->updated_at->toBeInstanceOf(CarbonImmutable::class)
         ->and(Hash::needsRehash($user->password))->toBeFalse();
 });
+
+it('determines admin status based on config allowlist', function (): void {
+    config(['admin.emails' => ['owner@example.com']]);
+
+    $admin = new User(['email' => 'owner@example.com']);
+    $user = new User(['email' => 'user@example.com']);
+
+    expect($admin->isAdmin())->toBeTrue()
+        ->and($user->isAdmin())->toBeFalse();
+});

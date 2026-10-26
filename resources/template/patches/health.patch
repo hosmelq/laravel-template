@@ -1,8 +1,9 @@
-diff -ruN a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
---- a/app/Providers/AppServiceProvider.php	2026-07-18 00:00:00
-+++ b/app/Providers/AppServiceProvider.php	2026-07-18 00:00:00
-@@ -20,2 +20,9 @@
- use Sentry\Laravel\Integration;
+diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
+--- a/app/Providers/AppServiceProvider.php
++++ b/app/Providers/AppServiceProvider.php
+@@ -22,1 +22,8 @@
+-use Sentry\Laravel\Integration;
++use Sentry\Laravel\Integration;
 +use Spatie\Health\Checks\Checks\CacheCheck;
 +use Spatie\Health\Checks\Checks\DatabaseCheck;
 +use Spatie\Health\Checks\Checks\DebugModeCheck;
@@ -10,17 +11,12 @@ diff -ruN a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvi
 +use Spatie\Health\Checks\Checks\QueueCheck;
 +use Spatie\Health\Checks\Checks\ScheduleCheck;
 +use Spatie\Health\Facades\Health;
- 
-@@ -29,2 +36,3 @@
-         $this->configureFormRequests();
+@@ -30,1 +37,2 @@
+-        $this->configureFormRequests();
++        $this->configureFormRequests();
 +        $this->configureLaravelHealth();
-         $this->configureModels();
-@@ -47,6 +55,18 @@
-     private function configureFormRequests(): void
-     {
-         FormRequest::failOnUnknownFields();
-     }
- 
+@@ -57,1 +65,13 @@
+-    private function configureModels(): void
 +    private function configureLaravelHealth(): void
 +    {
 +        Health::checks([
@@ -33,24 +29,25 @@ diff -ruN a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvi
 +        ]);
 +    }
 +
-     private function configureModels(): void
-diff -ruN a/bootstrap/app.php b/bootstrap/app.php
---- a/bootstrap/app.php	2026-07-18 00:00:00
-+++ b/bootstrap/app.php	2026-07-18 00:00:00
-@@ -12,3 +12,4 @@
-         web: __DIR__.'/../routes/web.php',
-         commands: __DIR__.'/../routes/console.php',
++    private function configureModels(): void
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -15,1 +15,2 @@
+-        commands: __DIR__.'/../routes/console.php',
++        commands: __DIR__.'/../routes/console.php',
 +        health: '/up',
-     )
-diff -ruN a/composer.json b/composer.json
---- a/composer.json	2026-07-18 00:00:00
-+++ b/composer.json	2026-07-18 00:00:00
-@@ -22 +22,2 @@
-     "sentry/sentry-laravel": "^4.27.0",
+diff --git a/composer.json b/composer.json
+--- a/composer.json
++++ b/composer.json
+@@ -24,1 +24,2 @@
+-    "sentry/sentry-laravel": "^4.28.0",
++    "sentry/sentry-laravel": "^4.28.0",
 +    "spatie/laravel-health": "^1.40.2",
-diff -ruN a/config/health.php b/config/health.php
---- a/config/health.php	1969-12-31 18:00:00
-+++ b/config/health.php	2026-07-17 23:35:13
+diff --git a/config/health.php b/config/health.php
+new file mode 100644
+--- /dev/null
++++ b/config/health.php
 @@ -0,0 +1,170 @@
 +<?php
 +
@@ -95,7 +92,7 @@ diff -ruN a/config/health.php b/config/health.php
 +        /*
 +         * Notifications will only get sent if this option is set to `true`.
 +         */
-+        'enabled' => env('HEALTH_NOTIFICATIONS_ENABLED', true),
++        'enabled' => env('HEALTH_NOTIFICATIONS_ENABLED', false),
 +
 +        'notifications' => [
 +            CheckFailedNotification::class => ['mail'],
@@ -222,22 +219,83 @@ diff -ruN a/config/health.php b/config/health.php
 + */
 +    // 'treat_skipped_as_failure' => false
 +];
-diff -ruN a/routes/console.php b/routes/console.php
---- a/routes/console.php	2026-07-18 00:00:00
-+++ b/routes/console.php	2026-07-18 00:00:00
-@@ -7 +7,5 @@
+diff --git a/routes/console.php b/routes/console.php
+--- a/routes/console.php
++++ b/routes/console.php
+@@ -7,1 +7,5 @@
+-Schedule::command('model:prune')->daily();
 +Schedule::command('health:check')->everyMinute();
 +Schedule::command('health:queue-check-heartbeat')->everyMinute();
 +Schedule::command('health:schedule-check-heartbeat')->everyMinute();
 +
- Schedule::command('model:prune')->daily();
-diff -ruN a/routes/web.php b/routes/web.php
---- a/routes/web.php	2026-07-18 00:00:00
-+++ b/routes/web.php	2026-07-18 00:00:00
-@@ -5 +5,2 @@
- use Illuminate\Support\Facades\Route;
++Schedule::command('model:prune')->daily();
+diff --git a/routes/web.php b/routes/web.php
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -5,1 +5,7 @@
+-use Illuminate\Support\Facades\Route;
++use Illuminate\Support\Facades\Route;
++use Spatie\Health\Http\Controllers\HealthCheckResultsController;
 +use Spatie\Health\Http\Controllers\SimpleHealthCheckController;
-@@ -7 +8,3 @@
-+Route::get('up', SimpleHealthCheckController::class);
 +
- Route::get('/', fn (): array => [
++Route::get('/up', SimpleHealthCheckController::class);
++
++Route::middleware(['auth', 'admin'])->get('/health', HealthCheckResultsController::class);
+diff --git a/tests/Feature/Http/HealthTest.php b/tests/Feature/Http/HealthTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/HealthTest.php
+@@ -0,0 +1,53 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\get;
++use function Pest\Laravel\getJson;
++
++use App\Models\User;
++use Spatie\Health\Checks\Checks\DatabaseCheck;
++use Spatie\Health\Facades\Health;
++
++it('reports the application as unavailable until the health checks pass', function (): void {
++    $response = get('/up');
++
++    $response->assertServiceUnavailable();
++});
++
++it('reports that the application is up when the health checks pass', function (): void {
++    Health::clearChecks()->checks([
++        DatabaseCheck::new(),
++    ]);
++
++    $response = get('/up?fresh');
++
++    $response->assertOk()
++        ->assertExactJson(['healthy' => true]);
++});
++
++it('rejects guests from the health check results', function (): void {
++    $response = getJson('/health');
++
++    $response->assertUnauthorized();
++});
++
++it('forbids non-admin users from the health check results', function (): void {
++    config(['admin.emails' => ['admin@example.com']]);
++
++    login(User::factory()->createOne(['email' => 'user@example.com']));
++
++    $response = get('/health');
++
++    $response->assertForbidden();
++});
++
++it('shows the health check results to admins', function (): void {
++    config(['admin.emails' => ['admin@example.com']]);
++
++    login(User::factory()->createOne(['email' => 'admin@example.com']));
++
++    $response = get('/health');
++
++    $response->assertOk();
++});

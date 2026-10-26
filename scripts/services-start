@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+for env_file in .env .env.testing; do
+  if [ ! -f "${env_file}" ]; then
+    echo "Missing ${env_file}: run 'mise run setup:install' first" >&2
+    exit 1
+  fi
+done
+
+docker compose up --detach --wait
+
+database_port="$(docker compose port postgresql 5432 | sed 's/.*://')"
+mail_port="$(docker compose port mailpit 1025 | sed 's/.*://')"
+mailpit_port="$(docker compose port mailpit 8025 | sed 's/.*://')"
+
+env_assignments=(
+  "COMPOSE_DB_PORT=${database_port}"
+  "COMPOSE_MAIL_PORT=${mail_port}"
+  "COMPOSE_MAILPIT_PORT=${mailpit_port}"
+  "DB_URL=postgres://postgres@127.0.0.1:${database_port}/template"
+  "MAIL_PORT=${mail_port}"
+)
+
+env_contents="$(IFS='|'; sed -E "/^(${env_assignments[*]%%=*})=/d" .env)"
+printf '%s\n' "${env_contents}" "${env_assignments[@]}" >.env
+
+testing_assignments=(
+  "DB_URL=postgres://postgres@127.0.0.1:${database_port}/template_testing"
+)
+
+testing_contents="$(IFS='|'; sed -E "/^(${testing_assignments[*]%%=*})=/d" .env.testing)"
+printf '%s\n' "${testing_contents}" "${testing_assignments[@]}" >.env.testing

@@ -1,0 +1,136 @@
+diff --git a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifyServiceProvider.php
+--- a/app/Providers/FortifyServiceProvider.php
++++ b/app/Providers/FortifyServiceProvider.php
+@@ -15,1 +15,2 @@
+-use Illuminate\Support\Str;
++use Illuminate\Support\Str;
++use Inertia\Inertia;
+@@ -29,1 +30,9 @@
+-        RateLimiter::for('login', function (Request $request) {
++        Fortify::loginView(function () {
++            return Inertia::render('auth/Login');
++        });
++
++        Fortify::verifyEmailView(function () {
++            return Inertia::render('auth/VerifyEmail');
++        });
++
++        RateLimiter::for('login', function (Request $request) {
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -24,1 +24,2 @@
+-            ])
++            ])
++            ->redirectGuestsTo(fn (): string => route('login'))
+diff --git a/config/fortify.php b/config/fortify.php
+--- a/config/fortify.php
++++ b/config/fortify.php
+@@ -144,1 +144,1 @@
+-    'views' => false,
++    'views' => true,
+diff --git a/resources/js/pages/auth/Login.tsx b/resources/js/pages/auth/Login.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/Login.tsx
+@@ -0,0 +1,30 @@
++import {Button, FieldError, Input, Label, TextField} from '@heroui/react'
++
++import {store} from '#/actions/Laravel/Fortify/Http/Controllers/AuthenticatedSessionController'
++import {Form} from '#/components/Form'
++
++export default function Login() {
++  return (
++    <div className="mx-auto max-w-sm">
++      <Form action={store()} className="flex flex-col gap-y-4">
++        {({processing}) => (
++          <>
++            <TextField isRequired name="email">
++              <Label>Email Address</Label>
++              <Input autoComplete="email" inputMode="email" type="email" />
++              <FieldError />
++            </TextField>
++            <TextField isRequired name="password">
++              <Label>Password</Label>
++              <Input autoComplete="current-password" type="password" />
++              <FieldError />
++            </TextField>
++            <Button isPending={processing} type="submit">
++              Sign In
++            </Button>
++          </>
++        )}
++      </Form>
++    </div>
++  )
++}
+diff --git a/resources/js/pages/auth/VerifyEmail.tsx b/resources/js/pages/auth/VerifyEmail.tsx
+new file mode 100644
+--- /dev/null
++++ b/resources/js/pages/auth/VerifyEmail.tsx
+@@ -0,0 +1,15 @@
++import {Head} from '@inertiajs/react'
++
++export default function VerifyEmail() {
++  return (
++    <>
++      <Head title="Verify email" />
++      <div className="mx-auto flex max-w-sm flex-col gap-2 text-center">
++        <h1 className="text-xl font-semibold">Verify your email address</h1>
++        <p className="text-foreground-500 text-sm">
++          Check your inbox and follow the verification link to continue.
++        </p>
++      </div>
++    </>
++  )
++}
+diff --git a/tests/Feature/Http/AuthenticationPagesTest.php b/tests/Feature/Http/AuthenticationPagesTest.php
+new file mode 100644
+--- /dev/null
++++ b/tests/Feature/Http/AuthenticationPagesTest.php
+@@ -0,0 +1,45 @@
++<?php
++
++declare(strict_types=1);
++
++use function Pest\Laravel\get;
++
++use App\Models\User;
++use Illuminate\Support\Facades\Route;
++use Inertia\Testing\AssertableInertia;
++
++it('renders the login page for guests', function (): void {
++    $response = get('/login');
++
++    $response->assertOk()
++        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('auth/Login'));
++});
++
++it('redirects guests to the login page', function (): void {
++    Route::middleware(['web', 'auth'])
++        ->get('/_test/protected', fn (): string => 'ok');
++
++    $response = get('/_test/protected');
++
++    $response->assertRedirect('/login');
++});
++
++it('renders the email verification notice for unverified users', function (): void {
++    login(User::factory()->unverified()->createOne());
++
++    $response = get('/email/verify');
++
++    $response->assertOk()
++        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('auth/VerifyEmail'));
++});
++
++it('sends unverified users to the email verification notice', function (): void {
++    Route::middleware(['web', 'auth', 'verified'])
++        ->get('/_test/verified', fn (): string => 'ok');
++
++    login(User::factory()->unverified()->createOne());
++
++    $response = get('/_test/verified');
++
++    $response->assertRedirect('/email/verify');
++});

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+project="template-test-$$"
+
+compose=(docker compose --file "${repo_root}/compose.test.yml" --project-name "${project}")
+
+cleanup() {
+  local status=$?
+
+  if ! "${compose[@]}" down --remove-orphans --volumes >/dev/null 2>&1; then
+    echo "Could not stop the test services: ${project}" >&2
+
+    if [ "${status}" -eq 0 ]; then
+      status=1
+    fi
+  fi
+
+  exit "${status}"
+}
+
+trap cleanup EXIT
+
+"${compose[@]}" up --detach --wait --quiet-pull
+
+database_port="$("${compose[@]}" port postgresql 5432 | sed 's/.*://')"
+
+if [ -z "${database_port}" ]; then
+  echo "Could not resolve the test database port" >&2
+  exit 1
+fi
+
+export DB_URL="postgres://postgres@127.0.0.1:${database_port}/template_testing"
+
+cd "${repo_root}"
+
+vendor/bin/pest "$@"

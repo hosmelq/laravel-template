@@ -1,7 +1,13 @@
 rules:
-  unpinned-images:
-    ignore:
-      - pullfrog.yml:28
+  forbidden-uses:
+    config:
+      allow:
+        - actions/*
+        - hosmelq/.github/*
+        - jdx/mise-action
+        - nubjs/setup-nub
+        - pullfrog/pullfrog@v0
+        - zizmorcore/zizmor-action
   unpinned-uses:
     config:
       policies:

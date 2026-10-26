@@ -13,70 +13,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PHP_VERSION: '8.5'
+
 jobs:
-  check-unused-composer-dependencies:
-    name: Check unused composer dependencies
-
-    runs-on: ubuntu-latest
-
-    needs: php-dependencies
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Check unused composer dependencies
-        uses: hosmelq/.github/.github/actions/composer-unused-dependencies-check@0e629f62b840abf1d0d07479e6efa99567293001
-        with:
-          artifact-mode: download
-          artifact-name: php-vendor
-          php-tools: cs2pr
-          php-version: '8.5'
-
-  check-composer:
-    name: Check composer
-
-    runs-on: ubuntu-latest
-
-    needs: php-dependencies
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Check composer normalize
-        uses: hosmelq/.github/.github/actions/composer-normalize-check@0e629f62b840abf1d0d07479e6efa99567293001
-        with:
-          artifact-mode: download
-          artifact-name: php-vendor
-          php-tools: cs2pr
-          php-version: '8.5'
-
-  check-static-code:
-    name: Check static code
-
-    runs-on: ubuntu-latest
-
-    needs: php-dependencies
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Check static code
-        uses: hosmelq/.github/.github/actions/phpstan-check@0e629f62b840abf1d0d07479e6efa99567293001
-        with:
-          artifact-mode: download
-          artifact-name: php-vendor
-          php-tools: cs2pr
-          php-version: '8.5'
-
   check-code-quality:
     name: Check code quality
 
@@ -91,12 +31,12 @@ jobs:
           persist-credentials: false
 
       - name: Check code quality
-        uses: hosmelq/.github/.github/actions/php-rector-check@0e629f62b840abf1d0d07479e6efa99567293001
+        uses: hosmelq/.github/.github/actions/php-rector-check@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
         with:
           artifact-mode: download
           artifact-name: php-vendor
           php-tools: cs2pr
-          php-version: '8.5'
+          php-version: ${{ env.PHP_VERSION }}
 
   check-code-style:
     name: Check code style
@@ -112,12 +52,75 @@ jobs:
           persist-credentials: false
 
       - name: Check PHP code style
-        uses: hosmelq/.github/.github/actions/php-pint-check@0e629f62b840abf1d0d07479e6efa99567293001
+        uses: hosmelq/.github/.github/actions/php-pint-check@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
         with:
           artifact-mode: download
           artifact-name: php-vendor
           php-tools: cs2pr
-          php-version: '8.5'
+          php-version: ${{ env.PHP_VERSION }}
+
+  check-composer:
+    name: Check composer
+
+    runs-on: ubuntu-latest
+
+    needs: php-dependencies
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check composer normalize
+        uses: hosmelq/.github/.github/actions/composer-normalize-check@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
+        with:
+          artifact-mode: download
+          artifact-name: php-vendor
+          php-tools: cs2pr
+          php-version: ${{ env.PHP_VERSION }}
+
+  check-static-code:
+    name: Check static code
+
+    runs-on: ubuntu-latest
+
+    needs: php-dependencies
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check static code
+        uses: hosmelq/.github/.github/actions/phpstan-check@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
+        with:
+          artifact-mode: download
+          artifact-name: php-vendor
+          php-tools: cs2pr
+          php-version: ${{ env.PHP_VERSION }}
+
+  check-unused-composer-dependencies:
+    name: Check unused composer dependencies
+
+    runs-on: ubuntu-latest
+
+    needs: php-dependencies
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check unused composer dependencies
+        uses: hosmelq/.github/.github/actions/composer-unused-dependencies-check@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
+        with:
+          artifact-mode: download
+          artifact-name: php-vendor
+          php-tools: cs2pr
+          php-version: ${{ env.PHP_VERSION }}
 
   php-dependencies:
     name: PHP dependencies
@@ -133,39 +136,31 @@ jobs:
           persist-credentials: false
 
       - name: Prepare composer dependencies
-        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
+        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
         with:
           artifact-mode: upload
           artifact-name: php-vendor
           php-tools: ''
-          php-version: '8.5'
+          php-version: ${{ env.PHP_VERSION }}
 
   tests:
     name: Tests (Shard ${{ matrix.shard }}/4)
 
+    permissions:
+      actions: read # Download the Pest TIA baseline artifact.
+      contents: read
+
     runs-on: ubuntu-latest
 
-    needs:
-      - check-code-quality
-      - check-code-style
-      - check-composer
-      - check-static-code
-      - check-unused-composer-dependencies
-      - php-dependencies
+    needs: php-dependencies
 
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
 
-    services:
-      postgres:
-        env:
-          POSTGRES_DB: template_testing
-          POSTGRES_HOST_AUTH_METHOD: trust
-        image: postgres:18@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636 # 18.4
-        ports:
-          - 5432:5432
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
@@ -174,12 +169,12 @@ jobs:
           persist-credentials: false
 
       - name: Prepare composer dependencies
-        uses: hosmelq/.github/.github/actions/composer-dependencies@0e629f62b840abf1d0d07479e6efa99567293001
+        uses: hosmelq/.github/.github/actions/composer-dependencies@32f4a95b53649f1634b195193a61bb56a6b26d50 # main
         with:
           artifact-mode: download
           artifact-name: php-vendor
           php-tools: ''
-          php-version: '8.5'
+          php-version: ${{ env.PHP_VERSION }}
 
       - name: Setup problem matchers
         run: |
@@ -192,4 +187,4 @@ jobs:
           php artisan key:generate --env=testing
 
       - name: Run Pest shard
-        run: ./vendor/bin/pest --ci --parallel --shard=${{ matrix.shard }}/4
+        run: ./scripts/test --ci --parallel --shard=${{ matrix.shard }}/4
