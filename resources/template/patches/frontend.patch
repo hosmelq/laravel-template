@@ -232,7 +232,11 @@ diff --git a/.github/workflows/update-generated-files.yml b/.github/workflows/up
 diff --git a/.gitignore b/.gitignore
 --- a/.gitignore
 +++ b/.gitignore
-@@ -24,1 +24,2 @@
+@@ -18,1 +18,2 @@
+-/auth.json
++/auth.json
++/bootstrap/ssr
+@@ -24,1 +25,2 @@
 -/storage/pail
 +/storage/pail
 +/tests/Browser/Screenshots
@@ -729,7 +733,7 @@ new file mode 100644
 +
 +    'ssr' => [
 +
-+        'enabled' => (bool) env('INERTIA_SSR_ENABLED', false),
++        'enabled' => (bool) env('INERTIA_SSR_ENABLED', true),
 +
 +        'runtime' => env('INERTIA_SSR_RUNTIME', 'node'),
 +
@@ -976,7 +980,7 @@ new file mode 100644
 +  "private": true,
 +  "type": "module",
 +  "scripts": {
-+    "build": "tsc -b && vite build",
++    "build": "tsc -b && vite build && vite build --ssr",
 +    "dev": "vite",
 +    "fix": "oxlint --fix --fix-dangerously --fix-suggestions --tsconfig tsconfig.json",
 +    "fmt": "oxfmt",
@@ -1043,6 +1047,10 @@ diff --git a/phpunit.xml b/phpunit.xml
 +            <directory>tests/Browser</directory>
 +        </testsuite>
 +        <testsuite name="Feature">
+@@ -32,1 +35,2 @@
+-        <env name="APP_ENV" value="testing"/>
++        <env name="APP_ENV" value="testing"/>
++        <env name="INERTIA_SSR_ENABLED" value="false"/>
 diff --git a/resources/js/app.tsx b/resources/js/app.tsx
 new file mode 100644
 --- /dev/null
@@ -1657,7 +1665,7 @@ diff --git a/vite.config.ts b/vite.config.ts
 new file mode 100644
 --- /dev/null
 +++ b/vite.config.ts
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,73 @@
 +import inertia from '@inertiajs/vite'
 +import {wayfinder} from '@laravel/vite-plugin-wayfinder'
 +import optimizeLocales from '@react-aria/optimize-locales-plugin'
@@ -1681,7 +1689,9 @@ new file mode 100644
 +      sourcemap: 'hidden',
 +    },
 +    plugins: [
-+      inertia(),
++      inertia({
++        ssr: 'resources/js/app.tsx',
++      }),
 +      laravel({
 +        fonts: [
 +          google('Inter', {

@@ -55,7 +55,7 @@ php artisan migrate
 The installer currently provides:
 
 - **Authentication** — Laravel Fortify authentication, email verification, and two-factor authentication. With Frontend, it also adds the login and email verification pages.
-- **Frontend** — Inertia, React, HeroUI, Tailwind CSS, Vite, and frontend tooling.
+- **Frontend** — Inertia with server-side rendering, React, HeroUI, Tailwind CSS, Vite, and frontend tooling.
 - **Health** — Application health checks, the health endpoint, the admin-only health results page, and scheduled checks.
 - **Media** — Media Library, image processing, and S3 filesystem support.
 - **Organizations** — Organizations, memberships, ownership, organization roles and permissions, policies, and current-organization support. With Frontend, it also adds the organization settings page and its routes.
