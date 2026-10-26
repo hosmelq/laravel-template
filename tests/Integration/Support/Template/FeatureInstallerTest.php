@@ -22,6 +22,7 @@ it('applies every selected patch as one group and removes the installer after ag
 
     $files = $this->mock(Filesystem::class);
     $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
+    $files->expects('isFile')->with(base_path('.railway/package.json'))->andReturnFalse();
     $files->expects('delete')
         ->with([
             base_path('.github/workflows/template.yml'),
@@ -80,6 +81,7 @@ it('applies every selected patch as one group and removes the installer after ag
             resource_path('template/patches/frontend.patch'),
             resource_path('template/patches/authentication.patch'),
             resource_path('template/patches/organizations.patch'),
+            resource_path('template/patches/railway.patch'),
         ],
         [
             'git',
@@ -90,6 +92,7 @@ it('applies every selected patch as one group and removes the installer after ag
             resource_path('template/patches/frontend.patch'),
             resource_path('template/patches/authentication.patch'),
             resource_path('template/patches/organizations.patch'),
+            resource_path('template/patches/railway.patch'),
         ],
         [
             'git',
@@ -98,6 +101,7 @@ it('applies every selected patch as one group and removes the installer after ag
             '--unidiff-zero',
             resource_path('template/patches/authentication+frontend.patch'),
             resource_path('template/patches/frontend+organizations.patch'),
+            resource_path('template/patches/frontend+railway.patch'),
         ],
         [
             'git',
@@ -105,6 +109,7 @@ it('applies every selected patch as one group and removes the installer after ag
             '--unidiff-zero',
             resource_path('template/patches/authentication+frontend.patch'),
             resource_path('template/patches/frontend+organizations.patch'),
+            resource_path('template/patches/frontend+railway.patch'),
         ],
         [
             'composer',
@@ -145,6 +150,7 @@ it('applies combination patches only when every combined feature is selected', f
 
     $files = $this->mock(Filesystem::class);
     $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
+    $files->expects('isFile')->with(base_path('.railway/package.json'))->andReturnFalse();
     $files->expects('delete')->once()->andReturnTrue();
     $files->expects('isDirectory')->times(6)->andReturnFalse();
     $files->expects('deleteDirectory')->with(resource_path('template'))->once()->andReturnTrue();
@@ -183,6 +189,7 @@ it('preserves non-empty directories when removing the installer', function (): v
 
     $files = $this->mock(Filesystem::class);
     $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
+    $files->expects('isFile')->with(base_path('.railway/package.json'))->andReturnFalse();
     $files->expects('delete')
         ->once()
         ->andReturnTrue();
@@ -216,6 +223,7 @@ it('preserves the installer when agent setup fails', function (): void {
 
     $files = $this->mock(Filesystem::class);
     $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
+    $files->expects('isFile')->with(base_path('.railway/package.json'))->andReturnFalse();
     $files->shouldNotReceive('delete');
     $files->shouldNotReceive('deleteDirectory');
 
@@ -243,6 +251,7 @@ it('builds frontend assets before agent setup and installer cleanup', function (
 
     $files = $this->mock(Filesystem::class);
     $files->expects('isFile')->with(base_path('package.json'))->andReturnTrue();
+    $files->expects('isFile')->with(base_path('.railway/package.json'))->andReturnFalse();
     $files->expects('delete')->once()->andReturnTrue();
     $files->expects('isDirectory')->times(6)->andReturnFalse();
     $files->expects('deleteDirectory')->with(resource_path('template'))->once()->andReturnTrue();
@@ -252,6 +261,30 @@ it('builds frontend assets before agent setup and installer cleanup', function (
     expect(array_slice($commands, -3))->toEqual([
         ['nub', 'install'],
         ['nub', 'run', 'build'],
+        ['mise', 'run', 'setup:agent'],
+    ]);
+});
+
+it('installs Railway dependencies before agent setup', function (): void {
+    $commands = [];
+
+    Process::fake(function (PendingProcess $process) use (&$commands): FakeProcessResult {
+        $commands[] = $process->command;
+
+        return Process::result();
+    });
+
+    $files = $this->mock(Filesystem::class);
+    $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
+    $files->expects('isFile')->with(base_path('.railway/package.json'))->andReturnTrue();
+    $files->expects('delete')->once()->andReturnTrue();
+    $files->expects('isDirectory')->times(6)->andReturnFalse();
+    $files->expects('deleteDirectory')->with(resource_path('template'))->once()->andReturnTrue();
+
+    resolve(FeatureInstaller::class)->install([TemplateFeature::Railway]);
+
+    expect(array_slice($commands, -2))->toEqual([
+        ['nub', '--cwd', '.railway', 'install'],
         ['mise', 'run', 'setup:agent'],
     ]);
 });

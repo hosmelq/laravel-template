@@ -15,6 +15,7 @@ enum TemplateFeature: string
     case Health = 'health';
     case Media = 'media';
     case Organizations = 'organizations';
+    case Railway = 'railway';
 
     public function label(): string
     {
@@ -24,6 +25,7 @@ enum TemplateFeature: string
             self::Health => 'Health',
             self::Media => 'Media',
             self::Organizations => 'Organizations',
+            self::Railway => 'Railway',
         };
     }
 }

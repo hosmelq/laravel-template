@@ -11,6 +11,7 @@ it('defines available values', function (): void {
         'health',
         'media',
         'organizations',
+        'railway',
     ]);
 });
 
@@ -22,4 +23,5 @@ it('defines labels', function (TemplateFeature $feature, string $label): void {
     'health' => [TemplateFeature::Health, 'Health'],
     'media' => [TemplateFeature::Media, 'Media'],
     'organizations' => [TemplateFeature::Organizations, 'Organizations'],
+    'railway' => [TemplateFeature::Railway, 'Railway'],
 ]);

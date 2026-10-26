@@ -77,6 +77,10 @@ validate_dependency_analyser_ignores() {
             $expected[] = "league/flysystem-aws-s3-v3";
         }
 
+        if (in_array("railway", $selected, true)) {
+            $expected[] = "laravel/octane";
+        }
+
         $actual = $packageMatches[1];
 
         sort($actual);
@@ -110,7 +114,7 @@ done < <(git -C "$repository_root" ls-files --others --exclude-standard -z)
 tar -C "$checkout" --exclude='.git' -cf "$snapshot" .
 
 features=()
-patch_order=(health media frontend authentication organizations)
+patch_order=(health media frontend authentication organizations railway)
 
 while IFS= read -r feature; do
     features+=("$feature")

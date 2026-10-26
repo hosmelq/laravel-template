@@ -2,6 +2,16 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "customManagers": [
     {
+      "customType": "jsonata",
+      "datasourceTemplate": "npm",
+      "fileFormat": "json",
+      "managerFilePatterns": ["/^(?:\\.railway/)?package\\.json$/"],
+      "matchStrings": [
+        "devEngines.packageManager[name = 'nub'].{'currentValue': version, 'depName': 'nub', 'depType': 'packageManager', 'packageName': '@nubjs/nub'}"
+      ],
+      "versioningTemplate": "npm"
+    },
+    {
       "customType": "regex",
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "jdx/mise",
@@ -36,10 +46,12 @@
   "dependencyDashboard": true,
   "enabledManagers": [
     "composer",
+    "custom.jsonata",
     "custom.regex",
     "docker-compose",
     "github-actions",
-    "mise"
+    "mise",
+    "npm"
   ],
   "extends": [
     "config:recommended",
@@ -68,6 +80,10 @@
     {
       "matchManagers": ["composer"],
       "postUpdateOptions": ["composerWithAll"],
+      "rangeStrategy": "bump"
+    },
+    {
+      "matchManagers": ["custom.jsonata", "npm"],
       "rangeStrategy": "bump"
     }
   ],

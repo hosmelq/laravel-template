@@ -11,38 +11,10 @@ diff --git a/.codex/config.toml b/.codex/config.toml
 diff --git a/.github/renovate.json b/.github/renovate.json
 --- a/.github/renovate.json
 +++ b/.github/renovate.json
-@@ -3,1 +3,11 @@
--  "customManagers": [
-+  "customManagers": [
-+    {
-+      "customType": "jsonata",
-+      "datasourceTemplate": "npm",
-+      "fileFormat": "json",
-+      "managerFilePatterns": ["/^package\\.json$/"],
-+      "matchStrings": [
-+        "devEngines.packageManager[name = 'nub'].{'currentValue': version, 'depName': 'nub', 'depType': 'packageManager', 'packageName': '@nubjs/nub'}"
-+      ],
-+      "versioningTemplate": "npm"
-+    },
-@@ -38,1 +48,2 @@
--    "composer",
-+    "composer",
-+    "custom.jsonata",
-@@ -42,1 +53,2 @@
--    "mise"
-+    "mise",
-+    "npm"
-@@ -55,1 +67,2 @@
+@@ -67,1 +67,2 @@
 -    "mise.toml"
 +    "mise.toml",
 +    "package.json"
-@@ -71,1 +84,5 @@
--      "rangeStrategy": "bump"
-+      "rangeStrategy": "bump"
-+    },
-+    {
-+      "matchManagers": ["custom.jsonata", "npm"],
-+      "rangeStrategy": "bump"
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
@@ -143,87 +115,7 @@ diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
 diff --git a/.github/workflows/update-generated-files.yml b/.github/workflows/update-generated-files.yml
 --- a/.github/workflows/update-generated-files.yml
 +++ b/.github/workflows/update-generated-files.yml
-@@ -3,1 +3,5 @@
--on:
-+on:
-+  pull_request:
-+    paths:
-+      - 'package.json'
-+    types: [opened, reopened, synchronize]
-@@ -18,1 +22,71 @@
--jobs:
-+jobs:
-+  update-nub-lock:
-+    name: Update Nub lockfile
-+
-+    if: github.event_name == 'pull_request' && github.event.pull_request.user.id == 29139614 && github.event.pull_request.head.repo.full_name == github.repository
-+
-+    permissions:
-+      actions: write # Run CI for the lockfile commit.
-+      contents: write # Commit the lockfile to the dependency branch.
-+
-+    runs-on: ubuntu-latest
-+
-+    steps:
-+      - name: Checkout
-+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-+        with:
-+          persist-credentials: false
-+          ref: ${{ github.event.pull_request.head.sha }}
-+
-+      - name: Setup Nub
-+        uses: nubjs/setup-nub@c7b970ec04655a2f0a111cd436cc182a3b660e7a # v0.6.0
-+        with:
-+          node-version: ${{ env.NODE_VERSION }}
-+          nub-version: ${{ env.NUB_VERSION }}
-+
-+      - name: Update Nub lockfile
-+        run: nub install --ignore-scripts --lockfile-only --no-frozen-lockfile
-+
-+      - name: Commit Nub lockfile
-+        env:
-+          GH_TOKEN: ${{ github.token }}
-+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-+        run: |
-+          if git diff --quiet -- nub.lock; then
-+            exit 0
-+          fi
-+
-+          base64 --wrap 0 nub.lock > "${RUNNER_TEMP}/nub-lock.base64"
-+
-+          jq --null-input \
-+            --arg head_ref "${HEAD_REF}" \
-+            --arg head_sha "${HEAD_SHA}" \
-+            --arg repository "${GITHUB_REPOSITORY}" \
-+            --rawfile contents "${RUNNER_TEMP}/nub-lock.base64" \
-+            '{
-+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
-+              variables: {
-+                input: {
-+                  branch: {branchName: $head_ref, repositoryNameWithOwner: $repository},
-+                  expectedHeadOid: $head_sha,
-+                  fileChanges: {additions: [{contents: $contents, path: "nub.lock"}]},
-+                  message: {headline: "chore(deps): update nub lockfile"}
-+                }
-+              }
-+            }' > "${RUNNER_TEMP}/nub-lock-commit.json"
-+
-+          if gh api graphql --input "${RUNNER_TEMP}/nub-lock-commit.json"; then
-+            gh workflow run ci.yml --ref "${HEAD_REF}"
-+            exit 0
-+          fi
-+
-+          current_head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${HEAD_REF}" --jq '.object.sha')"
-+
-+          if [ "${current_head_sha}" != "${HEAD_SHA}" ]; then
-+            echo 'The dependency branch changed; the next push regenerates the lockfile.'
-+            exit 0
-+          fi
-+
-+          exit 1
-+
-@@ -50,1 +124,4 @@
+@@ -141,1 +141,4 @@
 -      - name: Update Laravel Boost guidelines
 +      - name: Install npm dependencies
 +        run: nub install --ignore-scripts --no-frozen-lockfile
@@ -644,7 +536,7 @@ diff --git a/bootstrap/app.php b/bootstrap/app.php
 +use App\Http\Middleware\EnsureAdmin;
 +use App\Http\Middleware\HandleInertiaRequests;
 +use App\Http\Middleware\SetLocale;
-@@ -24,1 +26,5 @@
+@@ -25,1 +27,5 @@
 -            ->throttleApi();
 +            ->throttleApi()
 +            ->web(append: [

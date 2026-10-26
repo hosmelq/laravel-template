@@ -170,6 +170,14 @@ class FeatureInstaller
             $this->run(['nub', 'run', 'build'], 'The frontend assets could not be built.', forever: true);
         }
 
+        if ($this->files->isFile(base_path('.railway/package.json'))) {
+            $this->run(
+                ['nub', '--cwd', '.railway', 'install'],
+                'The Railway dependencies could not be installed.',
+                forever: true
+            );
+        }
+
         $this->run(['mise', 'run', 'setup:agent'], 'The agent setup could not be completed.', forever: true);
     }
 
@@ -181,6 +189,7 @@ class FeatureInstaller
             TemplateFeature::Health => config_path('health.php'),
             TemplateFeature::Media => config_path('media-library.php'),
             TemplateFeature::Organizations => app_path('Models/Organization.php'),
+            TemplateFeature::Railway => base_path('.railway/railway.ts'),
         });
     }
 
@@ -198,6 +207,7 @@ class FeatureInstaller
                 TemplateFeature::Frontend,
                 TemplateFeature::Authentication,
                 TemplateFeature::Organizations,
+                TemplateFeature::Railway,
             ],
             static fn (TemplateFeature $feature): bool => in_array($feature, $features, true)
         ));

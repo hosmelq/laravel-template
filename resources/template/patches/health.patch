@@ -30,13 +30,6 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +    }
 +
 +    private function configureModels(): void
-diff --git a/bootstrap/app.php b/bootstrap/app.php
---- a/bootstrap/app.php
-+++ b/bootstrap/app.php
-@@ -15,1 +15,2 @@
--        commands: __DIR__.'/../routes/console.php',
-+        commands: __DIR__.'/../routes/console.php',
-+        health: '/up',
 diff --git a/composer.json b/composer.json
 --- a/composer.json
 +++ b/composer.json

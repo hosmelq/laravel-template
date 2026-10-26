@@ -19,7 +19,7 @@ diff --git a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifySer
 diff --git a/bootstrap/app.php b/bootstrap/app.php
 --- a/bootstrap/app.php
 +++ b/bootstrap/app.php
-@@ -24,1 +24,2 @@
+@@ -25,1 +25,2 @@
 -            ])
 +            ])
 +            ->redirectGuestsTo(fn (): string => route('login'))

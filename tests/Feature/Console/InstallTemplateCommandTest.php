@@ -24,11 +24,13 @@ it('installs every selected prompt feature combination', function (array $select
                 'health',
                 'media',
                 'organizations',
+                'railway',
                 'Authentication',
                 'Frontend',
                 'Health',
                 'Media',
                 'Organizations',
+                'Railway',
             ],
             strict: true
         )

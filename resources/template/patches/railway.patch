@@ -1,0 +1,519 @@
+diff --git a/.github/renovate.json b/.github/renovate.json
+--- a/.github/renovate.json
++++ b/.github/renovate.json
+@@ -51,1 +51,2 @@
+-    "docker-compose",
++    "docker-compose",
++    "dockerfile",
+@@ -63,1 +64,2 @@
+-    ".github/workflows/**",
++    ".github/workflows/**",
++    ".railway/package.json",
+@@ -66,1 +68,2 @@
+-    "composer.json",
++    "composer.json",
++    "infrastructure/railway/**",
+@@ -70,1 +73,6 @@
+-  "packageRules": [
++  "packageRules": [
++    {
++      "matchDatasources": ["docker"],
++      "matchDepNames": ["serversideup/php"],
++      "versioning": "regex:^(?<compatibility>\\d+\\.\\d+-(?:cli|frankenphp))-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
++    },
+diff --git a/.gitignore b/.gitignore
+--- a/.gitignore
++++ b/.gitignore
+@@ -15,1 +15,2 @@
+-/.phpunit.cache
++/.phpunit.cache
++/.railway/node_modules
+diff --git a/.railway/package.json b/.railway/package.json
+new file mode 100644
+--- /dev/null
++++ b/.railway/package.json
+@@ -0,0 +1,17 @@
++{
++  "$schema": "https://www.schemastore.org/package.json",
++  "name": "template-railway",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "devDependencies": {
++    "railway": "^3.16.0"
++  },
++  "devEngines": {
++    "packageManager": {
++      "name": "nub",
++      "version": "0.9.5",
++      "onFail": "warn"
++    }
++  }
++}
+diff --git a/.railway/railway.ts b/.railway/railway.ts
+new file mode 100644
+--- /dev/null
++++ b/.railway/railway.ts
+@@ -0,0 +1,79 @@
++import {defineRailway, github, preserve, project, service} from 'railway/iac'
++
++export default defineRailway(() => {
++  const app = service('app', {
++    build: {
++      builder: 'DOCKERFILE',
++      dockerfilePath: 'infrastructure/railway/app.Dockerfile',
++    },
++    deploy: {
++      drainingSeconds: 15,
++      limitOverride: {
++        containers: {
++          cpu: 0.2,
++          memoryBytes: 536870912,
++        },
++      },
++      numReplicas: 1,
++      restartPolicyType: 'ALWAYS',
++    },
++    env: {
++      APP_ENV: preserve(),
++      LARAVEL_ENV_ENCRYPTION_KEY: preserve(),
++      PORT: '8080',
++    },
++    healthcheck: '/up',
++    source: github('template/template', {branch: 'main'}),
++  })
++
++  const queue = service('queue', {
++    build: {
++      builder: 'DOCKERFILE',
++      dockerfilePath: 'infrastructure/railway/worker.Dockerfile',
++    },
++    deploy: {
++      drainingSeconds: 210,
++      limitOverride: {
++        containers: {
++          cpu: 0.2,
++          memoryBytes: 536870912,
++        },
++      },
++      numReplicas: 1,
++      restartPolicyType: 'ALWAYS',
++    },
++    env: {
++      APP_ENV: preserve(),
++      LARAVEL_ENV_ENCRYPTION_KEY: preserve(),
++    },
++    source: github('template/template', {branch: 'main'}),
++    start:
++      'docker-php-serversideup-entrypoint php /var/www/html/artisan queue:work database --timeout=180 --tries=3',
++  })
++
++  const scheduler = service('scheduler', {
++    build: {
++      builder: 'DOCKERFILE',
++      dockerfilePath: 'infrastructure/railway/worker.Dockerfile',
++    },
++    deploy: {
++      drainingSeconds: 60,
++      limitOverride: {
++        containers: {
++          cpu: 0.2,
++          memoryBytes: 536870912,
++        },
++      },
++      numReplicas: 1,
++      restartPolicyType: 'ALWAYS',
++    },
++    env: {
++      APP_ENV: preserve(),
++      LARAVEL_ENV_ENCRYPTION_KEY: preserve(),
++    },
++    source: github('template/template', {branch: 'main'}),
++    start: 'docker-php-serversideup-entrypoint php /var/www/html/artisan schedule:work --whisper',
++  })
++
++  return project('Template', {resources: [app, queue, scheduler]})
++})
+diff --git a/composer-dependency-analyser.php b/composer-dependency-analyser.php
+--- a/composer-dependency-analyser.php
++++ b/composer-dependency-analyser.php
+@@ -17,1 +17,2 @@
+-        'laravel/tinker',
++        'laravel/octane',
++        'laravel/tinker',
+diff --git a/composer.json b/composer.json
+--- a/composer.json
++++ b/composer.json
+@@ -21,1 +21,2 @@
+-    "laravel/framework": "^13.33.0",
++    "laravel/framework": "^13.33.0",
++    "laravel/octane": "^2.22.0",
+diff --git a/config/octane.php b/config/octane.php
+new file mode 100644
+--- /dev/null
++++ b/config/octane.php
+@@ -0,0 +1,253 @@
++<?php
++
++declare(strict_types=1);
++
++use Laravel\Octane\Contracts\OperationTerminated;
++use Laravel\Octane\Events\RequestHandled;
++use Laravel\Octane\Events\RequestReceived;
++use Laravel\Octane\Events\RequestTerminated;
++use Laravel\Octane\Events\TaskReceived;
++use Laravel\Octane\Events\TaskTerminated;
++use Laravel\Octane\Events\TickReceived;
++use Laravel\Octane\Events\TickTerminated;
++use Laravel\Octane\Events\WorkerErrorOccurred;
++use Laravel\Octane\Events\WorkerStarting;
++use Laravel\Octane\Events\WorkerStopping;
++use Laravel\Octane\Listeners\CloseMonologHandlers;
++use Laravel\Octane\Listeners\EnsureUploadedFilesAreValid;
++use Laravel\Octane\Listeners\EnsureUploadedFilesCanBeMoved;
++use Laravel\Octane\Listeners\FlushOnce;
++use Laravel\Octane\Listeners\FlushTemporaryContainerInstances;
++use Laravel\Octane\Listeners\ReportException;
++use Laravel\Octane\Listeners\StopWorkerIfNecessary;
++use Laravel\Octane\Octane;
++
++return [
++
++    /*
++    |--------------------------------------------------------------------------
++    | Octane Server
++    |--------------------------------------------------------------------------
++    |
++    | This value determines the default "server" that will be used by Octane
++    | when starting, restarting, or stopping your server via the CLI. You
++    | are free to change this to the supported server of your choosing.
++    |
++    | Supported: "roadrunner", "swoole", "frankenphp"
++    |
++    */
++
++    'server' => env('OCTANE_SERVER', 'frankenphp'),
++
++    /*
++    |--------------------------------------------------------------------------
++    | Force HTTPS
++    |--------------------------------------------------------------------------
++    |
++    | When this configuration value is set to "true", Octane will inform the
++    | framework that all absolute links must be generated using the HTTPS
++    | protocol. Otherwise your links may be generated using plain HTTP.
++    |
++    */
++
++    'https' => env('OCTANE_HTTPS', true),
++
++    /*
++    |--------------------------------------------------------------------------
++    | Octane Listeners
++    |--------------------------------------------------------------------------
++    |
++    | All of the event listeners for Octane's events are defined below. These
++    | listeners are responsible for resetting your application's state for
++    | the next request. You may even add your own listeners to the list.
++    |
++    */
++
++    'listeners' => [
++        WorkerStarting::class => [
++            EnsureUploadedFilesAreValid::class,
++            EnsureUploadedFilesCanBeMoved::class,
++        ],
++
++        RequestReceived::class => [
++            ...Octane::prepareApplicationForNextOperation(),
++            ...Octane::prepareApplicationForNextRequest(),
++
++        ],
++
++        RequestHandled::class => [
++
++        ],
++
++        RequestTerminated::class => [
++            // FlushUploadedFiles::class,
++        ],
++
++        TaskReceived::class => [
++            ...Octane::prepareApplicationForNextOperation(),
++
++        ],
++
++        TaskTerminated::class => [
++
++        ],
++
++        TickReceived::class => [
++            ...Octane::prepareApplicationForNextOperation(),
++
++        ],
++
++        TickTerminated::class => [
++
++        ],
++
++        OperationTerminated::class => [
++            FlushOnce::class,
++            FlushTemporaryContainerInstances::class,
++            // DisconnectFromDatabases::class,
++            // CollectGarbage::class,
++        ],
++
++        WorkerErrorOccurred::class => [
++            ReportException::class,
++            StopWorkerIfNecessary::class,
++        ],
++
++        WorkerStopping::class => [
++            CloseMonologHandlers::class,
++        ],
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | Warm / Flush Bindings
++    |--------------------------------------------------------------------------
++    |
++    | The bindings listed below will either be pre-warmed when a worker boots
++    | or they will be flushed before every new request. Flushing a binding
++    | will force the container to resolve that binding again when asked.
++    |
++    */
++
++    'warm' => [
++        ...Octane::defaultServicesToWarm(),
++    ],
++
++    'flush' => [
++
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | Octane Swoole Tables
++    |--------------------------------------------------------------------------
++    |
++    | While using Swoole, you may define additional tables as required by the
++    | application. These tables can be used to store data that needs to be
++    | quickly accessed by other workers on the particular Swoole server.
++    |
++    */
++
++    'tables' => [
++        'example:1000' => [
++            'name' => 'string:1000',
++            'votes' => 'int',
++        ],
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | Octane Swoole Cache Table
++    |--------------------------------------------------------------------------
++    |
++    | While using Swoole, you may leverage the Octane cache, which is powered
++    | by a Swoole table. You may set the maximum number of rows as well as
++    | the number of bytes per row using the configuration options below.
++    |
++    */
++
++    'cache' => [
++        'rows' => 1000,
++        'bytes' => 10000,
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | File Watching
++    |--------------------------------------------------------------------------
++    |
++    | The following list of files and directories will be watched when using
++    | the --watch option offered by Octane. If any of the directories and
++    | files are changed, Octane will automatically reload your workers.
++    |
++    */
++
++    'watch' => [
++        'app',
++        'bootstrap',
++        'config/**/*.php',
++        'database/**/*.php',
++        'public/**/*.php',
++        'resources/**/*.php',
++        'routes',
++        'composer.lock',
++        '.env',
++    ],
++
++    /*
++    |--------------------------------------------------------------------------
++    | Garbage Collection Threshold
++    |--------------------------------------------------------------------------
++    |
++    | When executing long-lived PHP scripts such as Octane, memory can build
++    | up before being cleared by PHP. You can force Octane to run garbage
++    | collection if your application consumes this amount of megabytes.
++    |
++    */
++
++    'garbage' => 50,
++
++    /*
++    |--------------------------------------------------------------------------
++    | Maximum Execution Time
++    |--------------------------------------------------------------------------
++    |
++    | The following setting configures the maximum execution time for requests
++    | being handled by Octane. You may set this value to 0 to indicate that
++    | there isn't a specific time limit on Octane request execution time.
++    |
++    */
++
++    'max_execution_time' => 30,
++
++    /*
++    |--------------------------------------------------------------------------
++    | Octane Server State File
++    |--------------------------------------------------------------------------
++    |
++    | This value determines where Octane stores the state file used to track
++    | the running server's master process ID and admin endpoint, which is
++    | read by various Octane commands. You may tweak this if necessary.
++    |
++    */
++
++    'state_file' => env('OCTANE_STATE_FILE', storage_path('logs/octane-server-state.json')),
++
++    /*
++    |--------------------------------------------------------------------------
++    | RoadRunner Options
++    |--------------------------------------------------------------------------
++    |
++    | The following options are only used when the RoadRunner server is the
++    | server powering your application. You may customize the path to the
++    | worker binary here, which is useful for zero-downtime deployments
++    | where the application is served from a symlinked "current" path.
++    |
++    */
++
++    'roadrunner' => [
++        'command' => env('OCTANE_ROADRUNNER_COMMAND', 'vendor/bin/roadrunner-worker'),
++        'http_middleware' => env('OCTANE_ROADRUNNER_HTTP_MIDDLEWARE', 'static'),
++    ],
++
++];
+diff --git a/infrastructure/docker/common/etc/entrypoint.d/49-decrypt-laravel-environment.sh b/infrastructure/docker/common/etc/entrypoint.d/49-decrypt-laravel-environment.sh
+new file mode 100755
+--- /dev/null
++++ b/infrastructure/docker/common/etc/entrypoint.d/49-decrypt-laravel-environment.sh
+@@ -0,0 +1,3 @@
++#!/bin/sh
++
++php artisan env:decrypt --env="$APP_ENV" --force
+diff --git a/infrastructure/railway/app.Dockerfile b/infrastructure/railway/app.Dockerfile
+new file mode 100644
+--- /dev/null
++++ b/infrastructure/railway/app.Dockerfile
+@@ -0,0 +1,44 @@
++FROM serversideup/php:8.5-frankenphp-v4.5.3 AS base
++
++USER root
++
++RUN install-php-extensions bcmath excimer exif gd intl
++
++USER www-data
++
++# Composer dependencies stage
++FROM base AS composer-dependencies
++
++USER root
++
++RUN apt-get update \
++    && apt-get install -y --no-install-recommends git \
++    && rm -rf /var/lib/apt/lists/*
++
++COPY composer.json composer.lock ./
++
++RUN composer install --no-autoloader --no-dev --no-interaction --no-scripts --prefer-dist
++
++# Release stage
++FROM base AS final
++
++# ServerSideUp environment settings - https://serversideup.net/open-source/docker-php/docs/reference/environment-variable-specification
++ENV AUTORUN_ENABLED=true \
++    AUTORUN_LARAVEL_STORAGE_LINK=false \
++    HEALTHCHECK_PATH="/up" \
++    PHP_OPCACHE_ENABLE=1
++
++# Custom startup scripts for Laravel environment setup
++COPY --chmod=755 ./infrastructure/docker/common/etc/entrypoint.d/ /etc/entrypoint.d/
++
++# APP files + pre-built vendor folder from the dependency stage
++COPY --chown=www-data:www-data . .
++COPY --chown=www-data:www-data --from=composer-dependencies $APP_BASE_DIR/vendor ./vendor
++
++# Regenerate optimized autoloader
++RUN composer install --no-dev --no-interaction --optimize-autoloader --prefer-dist
++
++CMD ["php", "/var/www/html/artisan", "octane:start", "--host=0.0.0.0", "--port=8080", "--server=frankenphp"]
++
++# Switch back to www-data
++USER www-data
+diff --git a/infrastructure/railway/worker.Dockerfile b/infrastructure/railway/worker.Dockerfile
+new file mode 100644
+--- /dev/null
++++ b/infrastructure/railway/worker.Dockerfile
+@@ -0,0 +1,42 @@
++FROM serversideup/php:8.5-cli-v4.5.3 AS base
++
++USER root
++
++RUN install-php-extensions bcmath excimer exif gd intl
++
++USER www-data
++
++# Composer dependencies stage
++FROM base AS composer-dependencies
++
++USER root
++
++RUN apt-get update \
++    && apt-get install -y --no-install-recommends git \
++    && rm -rf /var/lib/apt/lists/*
++
++COPY composer.json composer.lock ./
++
++RUN composer install --no-autoloader --no-dev --no-interaction --no-scripts --prefer-dist
++
++# Release stage
++FROM base AS final
++
++# ServerSideUp environment settings - https://serversideup.net/open-source/docker-php/docs/reference/environment-variable-specification
++ENV AUTORUN_ENABLED=true \
++    AUTORUN_LARAVEL_MIGRATION=false \
++    AUTORUN_LARAVEL_STORAGE_LINK=false \
++    PHP_OPCACHE_ENABLE=1
++
++# Custom startup scripts for Laravel environment setup
++COPY --chmod=755 ./infrastructure/docker/common/etc/entrypoint.d/ /etc/entrypoint.d/
++
++# APP files + pre-built vendor folder from the dependency stage
++COPY --chown=www-data:www-data . .
++COPY --chown=www-data:www-data --from=composer-dependencies $APP_BASE_DIR/vendor ./vendor
++
++# Regenerate optimized autoloader
++RUN composer install --no-dev --no-interaction --optimize-autoloader --prefer-dist
++
++# Switch back to www-data
++USER www-data
+diff --git a/mise.toml b/mise.toml
+--- a/mise.toml
++++ b/mise.toml
+@@ -96,1 +96,2 @@
+-  "composer install",
++  "composer install",
++  "nub --cwd .railway ci",
