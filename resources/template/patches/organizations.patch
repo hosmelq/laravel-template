@@ -2,7 +2,7 @@ diff --git a/app/Actions/Invitations/AcceptInvitation.php b/app/Actions/Invitati
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Invitations/AcceptInvitation.php
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,43 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -22,10 +22,7 @@ new file mode 100644
 +    public function handle(User $user, Invitation $invitation): void
 +    {
 +        DB::transaction(function () use ($invitation, $user): void {
-+            $invitation
-+                ->organization
-+                ->users()
-+                ->syncWithoutDetaching([$user->id]);
++            $invitation->organization->users()->syncWithoutDetaching([$user->id]);
 +
 +            $invitation->update([
 +                'accepted_at' => now(),
@@ -71,9 +68,9 @@ new file mode 100644
 +
 +class CreateOrganization
 +{
-+    public function __construct(private readonly EnsureOrganizationRoles $ensureOrganizationRoles)
-+    {
-+    }
++    public function __construct(
++        private readonly EnsureOrganizationRoles $ensureOrganizationRoles,
++    ) {}
 +
 +    public function handle(User $user, CreateOrganizationInput $input): Organization
 +    {
@@ -100,7 +97,7 @@ diff --git a/app/Actions/Organizations/EnsureOrganizationRoles.php b/app/Actions
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Organizations/EnsureOrganizationRoles.php
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,42 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -117,9 +114,7 @@ new file mode 100644
 +
 +class EnsureOrganizationRoles
 +{
-+    public function __construct(private readonly PermissionRegistrar $permissionRegistrar)
-+    {
-+    }
++    public function __construct(private readonly PermissionRegistrar $permissionRegistrar) {}
 +
 +    public function handle(Organization $organization): void
 +    {
@@ -149,7 +144,7 @@ diff --git a/app/Actions/Organizations/Inputs/CreateOrganizationInput.php b/app/
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Organizations/Inputs/CreateOrganizationInput.php
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,17 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -165,14 +160,13 @@ new file mode 100644
 +{
 +    public function __construct(
 +        public readonly string $name,
-+    ) {
-+    }
++    ) {}
 +}
 diff --git a/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Organizations/Inputs/UpdateOrganizationInput.php
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,18 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -189,8 +183,7 @@ new file mode 100644
 +{
 +    public function __construct(
 +        public readonly Optional|string $name,
-+    ) {
-+    }
++    ) {}
 +}
 diff --git a/app/Actions/Organizations/UpdateOrganization.php b/app/Actions/Organizations/UpdateOrganization.php
 new file mode 100644
@@ -389,7 +382,7 @@ diff --git a/app/Http/Middleware/SetOrganizationPermissionContext.php b/app/Http
 new file mode 100644
 --- /dev/null
 +++ b/app/Http/Middleware/SetOrganizationPermissionContext.php
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,45 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -411,7 +404,11 @@ new file mode 100644
 +        try {
 +            $user = $request->user();
 +
-+            if ($user !== null && $user->current_organization_id === null && ($defaultOrganization = $user->defaultOrganization()) !== null) {
++            if (
++                $user !== null
++                && $user->current_organization_id === null
++                && ($defaultOrganization = $user->defaultOrganization()) !== null
++            ) {
 +                $user->switchOrganization($defaultOrganization);
 +            }
 +
@@ -782,7 +779,7 @@ diff --git a/app/Models/User.php b/app/Models/User.php
 +            ->first();
 +    }
 +
-@@ -66,1 +109,58 @@
+@@ -66,1 +109,57 @@
 -
 +
 +    public function isCurrentOrganization(Organization $organization): bool
@@ -836,8 +833,7 @@ diff --git a/app/Models/User.php b/app/Models/User.php
 +
 +        setPermissionsTeamId($organization->id);
 +
-+        $this->unsetRelation('permissions')
-+            ->unsetRelation('roles');
++        $this->unsetRelation('permissions')->unsetRelation('roles');
 +
 +        return true;
 +    }
@@ -884,11 +880,13 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +use App\Models\Invitation;
 +use App\Models\Organization;
 +use App\Models\User;
-@@ -45,1 +47,2 @@
+@@ -45,1 +47,4 @@
 -        AuditLogContext::resolveActorUsing(fn (): null|User => Auth::user());
 +        AuditLogContext::resolveActorUsing(fn (): null|User => Auth::user());
-+        AuditLogContext::resolveTenantUsing(fn (): null|int => Auth::user()?->current_organization_id);
-@@ -78,1 +81,3 @@
++        AuditLogContext::resolveTenantUsing(
++            fn (): null|int => Auth::user()?->current_organization_id,
++        );
+@@ -78,1 +83,3 @@
 -        Relation::enforceMorphMap([
 +        Relation::enforceMorphMap([
 +            'invitation' => Invitation::class,
@@ -1159,7 +1157,7 @@ diff --git a/database/factories/InvitationFactory.php b/database/factories/Invit
 new file mode 100644
 --- /dev/null
 +++ b/database/factories/InvitationFactory.php
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,60 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1191,11 +1189,8 @@ new file mode 100644
 +            'invited_by_user_id' => $this->invitedByUserIdFor(...),
 +
 +            'accepted_at' => null,
-+            'email' => fake()
-+                ->unique()
-+                ->regexify('\w{8}@example\.com'),
-+            'expires_at' => now()
-+                ->addDays(7),
++            'email' => fake()->unique()->regexify('\w{8}@example\.com'),
++            'expires_at' => now()->addDays(7),
 +            'role' => MembershipRole::Viewer,
 +            'token' => hash('sha256', Str::random(40)),
 +        ];
@@ -1204,8 +1199,7 @@ new file mode 100644
 +    public function expired(): static
 +    {
 +        return $this->state([
-+            'expires_at' => now()
-+                ->subDay(),
++            'expires_at' => now()->subDay(),
 +        ]);
 +    }
 +
@@ -1221,9 +1215,7 @@ new file mode 100644
 +     */
 +    private function invitedByUserIdFor(array $attributes): int
 +    {
-+        return Organization::query()
-+            ->findOrFail($attributes['organization_id'])
-+            ->owner_id;
++        return Organization::query()->findOrFail($attributes['organization_id'])->owner_id;
 +    }
 +}
 diff --git a/database/factories/OrganizationFactory.php b/database/factories/OrganizationFactory.php
@@ -1276,14 +1268,16 @@ diff --git a/database/factories/UserFactory.php b/database/factories/UserFactory
 +        return [
 +            'current_organization_id' => null,
 +
-@@ -48,1 +51,14 @@
+@@ -48,1 +51,16 @@
 -}
 +
 +    /**
 +     * @param array<string, mixed> $values
 +     */
-+    public function withOrganization(null|Organization $organization = null, array $values = []): static
-+    {
++    public function withOrganization(
++        null|Organization $organization = null,
++        array $values = [],
++    ): static {
 +        $organization ??= Organization::factory()->createOne();
 +
 +        return $this->state(['current_organization_id' => $organization->id])
@@ -1360,7 +1354,7 @@ diff --git a/database/migrations/2026_08_28_133759_create_permission_tables.php 
 new file mode 100644
 --- /dev/null
 +++ b/database/migrations/2026_08_28_133759_create_permission_tables.php
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,191 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1400,100 +1394,155 @@ new file mode 100644
 +        /**
 +         * See `docs/prerequisites.md` for suggested lengths on 'name' and 'guard_name' if "1071 Specified key was too long" errors are encountered.
 +         */
-+        Schema::create($tableNames['roles'], static function (Blueprint $table) use ($teams, $columnNames): void {
-+            $table->id(); // role id
++        Schema::create(
++            $tableNames['roles'],
++            static function (Blueprint $table) use ($teams, $columnNames): void {
++                $table->id(); // role id
 +
-+            if ($teams || Config::boolean('permission.testing', false)) { // permission.testing is a fix for sqlite testing
-+                $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
-+                $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
-+            }
++                if ($teams || Config::boolean('permission.testing', false)) { // permission.testing is a fix for sqlite testing
++                    $table->unsignedBigInteger($columnNames['team_foreign_key'])->nullable();
++                    $table->index($columnNames['team_foreign_key'], 'roles_team_foreign_key_index');
++                }
 +
-+            $table->string('name');
-+            $table->string('guard_name');
-+            $table->timestamps();
++                $table->string('name');
++                $table->string('guard_name');
++                $table->timestamps();
 +
-+            if ($teams || Config::boolean('permission.testing', false)) {
-+                $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
-+            } else {
-+                $table->unique(['name', 'guard_name']);
-+            }
-+        });
++                if ($teams || Config::boolean('permission.testing', false)) {
++                    $table->unique([$columnNames['team_foreign_key'], 'name', 'guard_name']);
++                } else {
++                    $table->unique(['name', 'guard_name']);
++                }
++            },
++        );
 +
-+        Schema::create($tableNames['model_has_permissions'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotPermission, $teams): void {
-+            $table->unsignedBigInteger($pivotPermission);
++        Schema::create(
++            $tableNames['model_has_permissions'],
++            static function (Blueprint $table) use (
++                $tableNames,
++                $columnNames,
++                $pivotPermission,
++                $teams,
++            ): void {
++                $table->unsignedBigInteger($pivotPermission);
 +
-+            $table->string('model_type');
-+            $table->unsignedBigInteger($columnNames['model_morph_key']);
-+            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_permissions_model_id_model_type_index');
++                $table->string('model_type');
++                $table->unsignedBigInteger($columnNames['model_morph_key']);
++                $table->index(
++                    [$columnNames['model_morph_key'], 'model_type'],
++                    'model_has_permissions_model_id_model_type_index',
++                );
 +
-+            $table->foreign($pivotPermission)
-+                ->references('id') // permission id
-+                ->on($tableNames['permissions'])
-+                ->cascadeOnDelete();
++                $table->foreign($pivotPermission)
++                    ->references('id') // permission id
++                    ->on($tableNames['permissions'])
++                    ->cascadeOnDelete();
 +
-+            if ($teams) {
-+                $table->unsignedBigInteger($columnNames['team_foreign_key']);
-+                $table->index($columnNames['team_foreign_key'], 'model_has_permissions_team_foreign_key_index');
++                if ($teams) {
++                    $table->unsignedBigInteger($columnNames['team_foreign_key']);
++                    $table->index(
++                        $columnNames['team_foreign_key'],
++                        'model_has_permissions_team_foreign_key_index',
++                    );
++
++                    $table->primary(
++                        [
++                            $columnNames['team_foreign_key'],
++                            $pivotPermission,
++                            $columnNames['model_morph_key'],
++                            'model_type',
++                        ],
++                        'model_has_permissions_permission_model_type_primary',
++                    );
++                } else {
++                    $table->primary(
++                        [$pivotPermission, $columnNames['model_morph_key'], 'model_type'],
++                        'model_has_permissions_permission_model_type_primary',
++                    );
++                }
++            },
++        );
++
++        Schema::create(
++            $tableNames['model_has_roles'],
++            static function (Blueprint $table) use (
++                $tableNames,
++                $columnNames,
++                $pivotRole,
++                $teams,
++            ): void {
++                $table->unsignedBigInteger($pivotRole);
++
++                $table->string('model_type');
++                $table->unsignedBigInteger($columnNames['model_morph_key']);
++                $table->index(
++                    [$columnNames['model_morph_key'], 'model_type'],
++                    'model_has_roles_model_id_model_type_index',
++                );
++
++                $table->foreign($pivotRole)
++                    ->references('id') // role id
++                    ->on($tableNames['roles'])
++                    ->cascadeOnDelete();
++
++                if ($teams) {
++                    $table->unsignedBigInteger($columnNames['team_foreign_key']);
++                    $table->index(
++                        $columnNames['team_foreign_key'],
++                        'model_has_roles_team_foreign_key_index',
++                    );
++
++                    $table->primary(
++                        [
++                            $columnNames['team_foreign_key'],
++                            $pivotRole,
++                            $columnNames['model_morph_key'],
++                            'model_type',
++                        ],
++                        'model_has_roles_role_model_type_primary',
++                    );
++                } else {
++                    $table->primary(
++                        [$pivotRole, $columnNames['model_morph_key'], 'model_type'],
++                        'model_has_roles_role_model_type_primary',
++                    );
++                }
++            },
++        );
++
++        Schema::create(
++            $tableNames['role_has_permissions'],
++            static function (Blueprint $table) use (
++                $tableNames,
++                $pivotRole,
++                $pivotPermission,
++            ): void {
++                $table->unsignedBigInteger($pivotPermission);
++                $table->unsignedBigInteger($pivotRole);
++
++                $table->foreign($pivotPermission)
++                    ->references('id') // permission id
++                    ->on($tableNames['permissions'])
++                    ->cascadeOnDelete();
++
++                $table->foreign($pivotRole)
++                    ->references('id') // role id
++                    ->on($tableNames['roles'])
++                    ->cascadeOnDelete();
 +
 +                $table->primary(
-+                    [$columnNames['team_foreign_key'], $pivotPermission, $columnNames['model_morph_key'], 'model_type'],
-+                    'model_has_permissions_permission_model_type_primary'
++                    [$pivotPermission, $pivotRole],
++                    'role_has_permissions_permission_id_role_id_primary',
 +                );
-+            } else {
-+                $table->primary(
-+                    [$pivotPermission, $columnNames['model_morph_key'], 'model_type'],
-+                    'model_has_permissions_permission_model_type_primary'
-+                );
-+            }
-+        });
-+
-+        Schema::create($tableNames['model_has_roles'], static function (Blueprint $table) use ($tableNames, $columnNames, $pivotRole, $teams): void {
-+            $table->unsignedBigInteger($pivotRole);
-+
-+            $table->string('model_type');
-+            $table->unsignedBigInteger($columnNames['model_morph_key']);
-+            $table->index([$columnNames['model_morph_key'], 'model_type'], 'model_has_roles_model_id_model_type_index');
-+
-+            $table->foreign($pivotRole)
-+                ->references('id') // role id
-+                ->on($tableNames['roles'])
-+                ->cascadeOnDelete();
-+
-+            if ($teams) {
-+                $table->unsignedBigInteger($columnNames['team_foreign_key']);
-+                $table->index($columnNames['team_foreign_key'], 'model_has_roles_team_foreign_key_index');
-+
-+                $table->primary(
-+                    [$columnNames['team_foreign_key'], $pivotRole, $columnNames['model_morph_key'], 'model_type'],
-+                    'model_has_roles_role_model_type_primary'
-+                );
-+            } else {
-+                $table->primary(
-+                    [$pivotRole, $columnNames['model_morph_key'], 'model_type'],
-+                    'model_has_roles_role_model_type_primary'
-+                );
-+            }
-+        });
-+
-+        Schema::create($tableNames['role_has_permissions'], static function (Blueprint $table) use ($tableNames, $pivotRole, $pivotPermission): void {
-+            $table->unsignedBigInteger($pivotPermission);
-+            $table->unsignedBigInteger($pivotRole);
-+
-+            $table->foreign($pivotPermission)
-+                ->references('id') // permission id
-+                ->on($tableNames['permissions'])
-+                ->cascadeOnDelete();
-+
-+            $table->foreign($pivotRole)
-+                ->references('id') // role id
-+                ->on($tableNames['roles'])
-+                ->cascadeOnDelete();
-+
-+            $table->primary([$pivotPermission, $pivotRole], 'role_has_permissions_permission_id_role_id_primary');
-+        });
++            },
++        );
 +
 +        resolve(Factory::class)
-+            ->store(Config::string('permission.cache.store') !== 'default' ? Config::string('permission.cache.store') : null)
++            ->store(
++                Config::string('permission.cache.store') !== 'default'
++                    ? Config::string('permission.cache.store')
++                    : null,
++            )
 +            ->forget(Config::string('permission.cache.key'));
 +    }
 +};
@@ -1544,10 +1593,9 @@ diff --git a/database/seeders/LocalSeeder.php b/database/seeders/LocalSeeder.php
 @@ -14,1 +17,1 @@
 -        User::factory()->createOne([
 +        $user = User::factory()->createOne([
-@@ -18,1 +21,15 @@
+@@ -18,1 +21,14 @@
 -        ]);
 +        ]);
-+
 +        $organizations = Organization::factory()
 +            ->count(2)
 +            ->for($user, 'owner')
@@ -1617,7 +1665,7 @@ diff --git a/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/Middleware/SetOrganizationPermissionContextTest.php
-@@ -0,0 +1,297 @@
+@@ -0,0 +1,262 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1631,9 +1679,7 @@ new file mode 100644
 +use Illuminate\Support\Facades\Route;
 +
 +it('uses the active organization and clears the team after the request', function (): void {
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++    $user = User::factory()->withOrganization()->createOne();
 +
 +    login($user);
 +
@@ -1644,15 +1690,13 @@ new file mode 100644
 +
 +    $response->assertExactJson(['team_id' => $user->current_organization_id]);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('assigns the first organization and its permission team when no organization is active', function (): void {
 +    $user = User::factory()
 +        ->has(
-+            Organization::factory()
-+                ->count(2),
++            Organization::factory()->count(2),
 +            'organizations',
 +        )
 +        ->createOne();
@@ -1693,8 +1737,7 @@ new file mode 100644
 +
 +    $response->assertExactJson(['team_id' => null]);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('uses no team for a user without an active organization', function (): void {
@@ -1708,18 +1751,13 @@ new file mode 100644
 +
 +    $response->assertExactJson(['team_id' => null]);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('uses the active organization instead of the organization in the URL', function (): void {
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++    $user = User::factory()->withOrganization()->createOne();
 +    $activeOrganizationId = $user->current_organization_id;
-+    $urlOrganization = Organization::factory()
-+        ->recycle($user)
-+        ->createOne();
++    $urlOrganization = Organization::factory()->recycle($user)->createOne();
 +
 +    login($user);
 +
@@ -1738,23 +1776,19 @@ new file mode 100644
 +        'id' => $user->id,
 +    ]);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('clears the active team when the request throws an exception', function (): void {
 +    Exceptions::fake();
 +
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++    $user = User::factory()->withOrganization()->createOne();
 +
 +    login($user);
 +
 +    Route::middleware('web')
 +        ->get('/_test/permission-context', function () use ($user): never {
-+            expect(getPermissionsTeamId())
-+                ->toBe($user->current_organization_id);
++            expect(getPermissionsTeamId())->toBe($user->current_organization_id);
 +
 +            throw new RuntimeException('Permission context request failed.');
 +        });
@@ -1765,14 +1799,11 @@ new file mode 100644
 +
 +    Exceptions::assertReported(RuntimeException::class);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('allows requests for the active organization after route model binding', function (): void {
-+    $organization = Organization::factory()
-+        ->createOne();
-+
++    $organization = Organization::factory()->createOne();
 +    $user = login(organization: $organization);
 +
 +    Route::middleware('web')
@@ -1793,19 +1824,14 @@ new file mode 100644
 +        'id' => $user->id,
 +    ]);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('forbids requests for another membership without switching the active organization', function (): void {
-+    $activeOrganization = Organization::factory()
-+        ->createOne();
-+    $otherOrganization = Organization::factory()
-+        ->createOne();
-+
++    $activeOrganization = Organization::factory()->createOne();
++    $otherOrganization = Organization::factory()->createOne();
 +    $user = login(organization: $activeOrganization);
-+    $user->organizations()
-+        ->attach($otherOrganization);
++    $user->organizations()->attach($otherOrganization);
 +
 +    Route::middleware('web')
 +        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
@@ -1828,12 +1854,9 @@ new file mode 100644
 +});
 +
 +it('resolves the default organization before checking the route when the user has no active organization', function (): void {
-+    $organization = Organization::factory()
-+        ->createOne();
-+
++    $organization = Organization::factory()->createOne();
 +    $user = login();
-+    $user->organizations()
-+        ->attach($organization);
++    $user->organizations()->attach($organization);
 +
 +    Route::middleware('web')
 +        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
@@ -1853,21 +1876,15 @@ new file mode 100644
 +        'id' => $user->id,
 +    ]);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('forbids another membership after resolving the default organization without switching to the route organization', function (): void {
-+    $defaultOrganization = Organization::factory()
-+        ->createOne();
-+    $otherOrganization = Organization::factory()
-+        ->createOne();
-+
++    $defaultOrganization = Organization::factory()->createOne();
++    $otherOrganization = Organization::factory()->createOne();
 +    $user = login();
-+    $user->organizations()
-+        ->attach($defaultOrganization);
-+    $user->organizations()
-+        ->attach($otherOrganization);
++    $user->organizations()->attach($defaultOrganization);
++    $user->organizations()->attach($otherOrganization);
 +    $user->load('organizations');
 +
 +    Route::middleware('web')
@@ -1879,21 +1896,18 @@ new file mode 100644
 +
 +    $response->assertForbidden();
 +
-+    expect($user->current_organization_id)
-+        ->toBe($defaultOrganization->id);
++    expect($user->current_organization_id)->toBe($defaultOrganization->id);
 +
 +    assertDatabaseHas(User::class, [
 +        'current_organization_id' => $defaultOrganization->id,
 +        'id' => $user->id,
 +    ]);
 +
-+    expect(getPermissionsTeamId())
-+        ->toBeNull();
++    expect(getPermissionsTeamId())->toBeNull();
 +});
 +
 +it('leaves guests unaffected', function (): void {
-+    $organization = Organization::factory()
-+        ->createOne();
++    $organization = Organization::factory()->createOne();
 +
 +    Route::middleware('web')
 +        ->get('/_test/organizations/{organization}', fn (Organization $organization): array => [
@@ -1908,8 +1922,7 @@ new file mode 100644
 +it('leaves routes without an organization parameter unaffected', function (): void {
 +    login();
 +
-+    Route::middleware('web')
-+        ->get('/_test/organizations', fn (): array => ['allowed' => true]);
++    Route::middleware('web')->get('/_test/organizations', fn (): array => ['allowed' => true]);
 +
 +    $response = getJson('/_test/organizations');
 +
@@ -1919,7 +1932,7 @@ diff --git a/tests/Feature/Models/OrganizationRouteKeyTest.php b/tests/Feature/M
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Models/OrganizationRouteKeyTest.php
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,30 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1934,10 +1947,16 @@ new file mode 100644
 +    $organization = Organization::factory()->createOne();
 +
 +    Route::middleware(SubstituteBindings::class)
-+        ->get('/_organization/{organization}', fn (Organization $organization): string => $organization->slug);
++        ->get(
++            '/_organization/{organization}',
++            fn (Organization $organization): string => $organization->slug,
++        );
 +
 +    Route::middleware(SubstituteBindings::class)
-+        ->get('/_sqid/{organization:sqid}', fn (Organization $organization): string => $organization->sqid);
++        ->get(
++            '/_sqid/{organization:sqid}',
++            fn (Organization $organization): string => $organization->sqid,
++        );
 +
 +    get('/_organization/'.$organization->slug)->assertOk()->assertSeeText($organization->slug);
 +    get('/_organization/'.$organization->sqid)->assertNotFound();
@@ -1948,7 +1967,7 @@ diff --git a/tests/Integration/Actions/AcceptInvitationTest.php b/tests/Integrat
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/AcceptInvitationTest.php
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,200 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1974,8 +1993,7 @@ new file mode 100644
 +    $user = User::factory()->createOne();
 +    $invitation = Invitation::factory()->createOne(['email' => $user->email]);
 +
-+    resolve(EnsureOrganizationRoles::class)
-+        ->handle($invitation->organization);
++    resolve(EnsureOrganizationRoles::class)->handle($invitation->organization);
 +
 +    resolve(AcceptInvitation::class)->handle($user, $invitation);
 +
@@ -1987,25 +2005,24 @@ new file mode 100644
 +        ->current_organization_id->toBe($invitation->organization_id)
 +        ->and($invitation->accepted_at)->toEqual(now());
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
-+        && $log->changes?->before['accepted_at'] === null
-+        && $log->changes?->after['accepted_at'] !== null
-+        && $log->tenantId === (string) $invitation->organization_id
-+        && $log->targets[0]->id === (string) $invitation->id);
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
++            && $log->changes?->before['accepted_at'] === null
++            && $log->changes?->after['accepted_at'] !== null
++            && $log->tenantId === (string) $invitation->organization_id
++            && $log->targets[0]->id === (string) $invitation->id,
++    );
 +});
 +
 +it('accepts an invitation and switches organizations when memberships are already loaded', function (): void {
 +    AuditLog::fake();
 +
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++    $user = User::factory()->withOrganization()->createOne();
 +    $invitation = Invitation::factory()->createOne(['email' => $user->email]);
 +
 +    $user->load('organizations');
 +
-+    resolve(EnsureOrganizationRoles::class)
-+        ->handle($invitation->organization);
++    resolve(EnsureOrganizationRoles::class)->handle($invitation->organization);
 +
 +    resolve(AcceptInvitation::class)->handle($user, $invitation);
 +
@@ -2020,9 +2037,11 @@ new file mode 100644
 +        ->and($invitation->fresh())
 +        ->accepted_at->toEqual(now());
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
-+        && $log->tenantId === (string) $invitation->organization_id
-+        && $log->targets[0]->id === (string) $invitation->id);
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
++            && $log->tenantId === (string) $invitation->organization_id
++            && $log->targets[0]->id === (string) $invitation->id,
++    );
 +});
 +
 +it('accepts an invitation without duplicating an existing membership', function (): void {
@@ -2033,8 +2052,7 @@ new file mode 100644
 +
 +    $invitation->organization->users()->attach($user);
 +
-+    resolve(EnsureOrganizationRoles::class)
-+        ->handle($invitation->organization);
++    resolve(EnsureOrganizationRoles::class)->handle($invitation->organization);
 +
 +    resolve(AcceptInvitation::class)->handle($user, $invitation);
 +
@@ -2044,15 +2062,17 @@ new file mode 100644
 +        ->current_organization_id->toBe($invitation->organization_id)
 +        ->and($invitation->fresh())->accepted_at->toEqual(now());
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
-+        && $log->tenantId === (string) $invitation->organization_id
-+        && $log->targets[0]->id === (string) $invitation->id);
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::InvitationAccepted->value
++            && $log->tenantId === (string) $invitation->organization_id
++            && $log->targets[0]->id === (string) $invitation->id,
++    );
 +});
 +
-+it('assigns the invited role only in its organization and keeps its permission team active', function (MembershipRole $membershipRole): void {
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++it('assigns the invited role only in its organization and keeps its permission team active', function (
++    MembershipRole $membershipRole,
++): void {
++    $user = User::factory()->withOrganization()->createOne();
 +    $otherOrganization = $user->currentOrganization;
 +    $invitation = Invitation::factory()
 +        ->createOne([
@@ -2068,8 +2088,7 @@ new file mode 100644
 +    $user->assignRole(MembershipRole::Viewer);
 +    $user->load(['permissions', 'roles']);
 +
-+    resolve(AcceptInvitation::class)
-+        ->handle($user, $invitation);
++    resolve(AcceptInvitation::class)->handle($user, $invitation);
 +
 +    $role = Role::query()
 +        ->where('name', $membershipRole->value)
@@ -2118,12 +2137,9 @@ new file mode 100644
 +    ]);
 +
 +it('rolls back acceptance when the invited role is missing', function (): void {
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++    $user = User::factory()->withOrganization()->createOne();
 +    $otherOrganization = $user->currentOrganization;
-+    $invitation = Invitation::factory()
-+        ->createOne(['email' => $user->email]);
++    $invitation = Invitation::factory()->createOne(['email' => $user->email]);
 +
 +    Role::query()
 +        ->where('name', $invitation->role->value)
@@ -2134,10 +2150,8 @@ new file mode 100644
 +    $user->switchOrganization($otherOrganization);
 +
 +    expect(function () use ($invitation, $user): void {
-+        resolve(AcceptInvitation::class)
-+            ->handle($user, $invitation);
-+    })
-+        ->toThrow(RoleDoesNotExist::class);
++        resolve(AcceptInvitation::class)->handle($user, $invitation);
++    })->toThrow(RoleDoesNotExist::class);
 +
 +    assertDatabaseMissing('organization_user', [
 +        'organization_id' => $invitation->organization_id,
@@ -2158,7 +2172,7 @@ diff --git a/tests/Integration/Actions/CreateOrganizationTest.php b/tests/Integr
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/CreateOrganizationTest.php
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,51 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2178,7 +2192,6 @@ new file mode 100644
 +    AuditLog::fake();
 +
 +    $user = User::factory()->createOne();
-+
 +    $organization = resolve(CreateOrganization::class)->handle(
 +        user: $user,
 +        input: CreateOrganizationInput::from([
@@ -2204,16 +2217,18 @@ new file mode 100644
 +        ->users->toHaveCount(1)
 +        ->and($user->hasRole(MembershipRole::Owner))->toBeTrue();
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::OrganizationCreated->value
-+        && $log->tenantId === (string) $organization->id
-+        && $log->targets[0]->type === 'organization'
-+        && $log->targets[0]->id === (string) $organization->id);
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::OrganizationCreated->value
++            && $log->tenantId === (string) $organization->id
++            && $log->targets[0]->type === 'organization'
++            && $log->targets[0]->id === (string) $organization->id,
++    );
 +});
 diff --git a/tests/Integration/Actions/EnsureOrganizationRolesTest.php b/tests/Integration/Actions/EnsureOrganizationRolesTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/EnsureOrganizationRolesTest.php
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,113 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2248,7 +2263,10 @@ new file mode 100644
 +    }
 +});
 +
-+it('assigns the exact default permissions', function (MembershipRole $membershipRole, array $permissions): void {
++it('assigns the exact default permissions', function (
++    MembershipRole $membershipRole,
++    array $permissions,
++): void {
 +    $organization = Organization::factory()->createOne();
 +    $role = Role::query()
 +        ->where('name', $membershipRole->value)
@@ -2257,8 +2275,14 @@ new file mode 100644
 +
 +    expect($role->permissions()->orderBy('name')->pluck('name')->all())->toBe($permissions);
 +})->with([
-+    'admin' => [MembershipRole::Admin, ['settings.organization', 'settings.view', 'team.manage', 'team.view']],
-+    'owner' => [MembershipRole::Owner, ['settings.organization', 'settings.view', 'team.manage', 'team.view']],
++    'admin' => [
++        MembershipRole::Admin,
++        ['settings.organization', 'settings.view', 'team.manage', 'team.view'],
++    ],
++    'owner' => [
++        MembershipRole::Owner,
++        ['settings.organization', 'settings.view', 'team.manage', 'team.view'],
++    ],
 +    'viewer' => [MembershipRole::Viewer, []],
 +]);
 +
@@ -2300,7 +2324,9 @@ new file mode 100644
 +    assertDatabaseCount(Role::class, 6);
 +});
 +
-+it('creates organization roles independently of global roles with the same name', function (MembershipRole $membershipRole): void {
++it('creates organization roles independently of global roles with the same name', function (
++    MembershipRole $membershipRole,
++): void {
 +    Role::query()->create([
 +        'guard_name' => 'web',
 +        'name' => $membershipRole->value,
@@ -2320,7 +2346,7 @@ diff --git a/tests/Integration/Actions/UpdateOrganizationTest.php b/tests/Integr
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/UpdateOrganizationTest.php
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,61 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2340,7 +2366,6 @@ new file mode 100644
 +    $organization = Organization::factory()->createOne([
 +        'name' => 'My Organization',
 +    ]);
-+
 +    $updatedOrganization = resolve(UpdateOrganization::class)->handle(
 +        organization: $organization,
 +        input: UpdateOrganizationInput::from([
@@ -2355,12 +2380,14 @@ new file mode 100644
 +        'name' => 'Updated Organization',
 +        'owner_id' => $organization->owner_id,
 +    ]);
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::OrganizationUpdated->value
-+        && $log->changes?->before['name'] === 'My Organization'
-+        && $log->changes?->after['name'] === 'Updated Organization'
-+        && $log->tenantId === (string) $organization->id
-+        && $log->targets[0]->type === 'organization'
-+        && $log->targets[0]->id === (string) $organization->id);
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::OrganizationUpdated->value
++            && $log->changes?->before['name'] === 'My Organization'
++            && $log->changes?->after['name'] === 'Updated Organization'
++            && $log->tenantId === (string) $organization->id
++            && $log->targets[0]->type === 'organization'
++            && $log->targets[0]->id === (string) $organization->id,
++    );
 +});
 +
 +it('updates only provided organization fields', function (): void {
@@ -2445,7 +2472,7 @@ diff --git a/tests/Integration/Http/Resources/OrganizationResourceTest.php b/tes
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Http/Resources/OrganizationResourceTest.php
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,21 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2457,7 +2484,6 @@ new file mode 100644
 +        'name' => 'Acme Corporation',
 +        'slug' => 'acme-corporation',
 +    ]);
-+
 +    $resource = json_decode($organization->toResource()->toJson(), true);
 +
 +    expect($resource)->toEqual([
@@ -2472,7 +2498,7 @@ diff --git a/tests/Integration/Models/InvitationTest.php b/tests/Integration/Mod
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Models/InvitationTest.php
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,99 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2553,7 +2579,9 @@ new file mode 100644
 +it('scopes queries by sqid', function (): void {
 +    $invitation = Invitation::factory()->createOne();
 +
-+    expect(Invitation::query()->whereSqid($invitation->sqid)->first()?->is($invitation))->toBeTrue();
++    expect(
++        Invitation::query()->whereSqid($invitation->sqid)->first()?->is($invitation),
++    )->toBeTrue();
 +});
 +
 +it('throws when sqid cannot be found', function (): void {
@@ -2635,7 +2663,7 @@ diff --git a/tests/Integration/Models/UserTest.php b/tests/Integration/Models/Us
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Models/UserTest.php
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,232 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2672,14 +2700,9 @@ new file mode 100644
 +});
 +
 +it('returns the current organization as the default instead of the first membership', function (): void {
-+    $firstOrganization = Organization::factory()
-+        ->createOne();
-+    $user = User::factory()
-+        ->hasAttached($firstOrganization)
-+        ->withOrganization()
-+        ->createOne();
++    $firstOrganization = Organization::factory()->createOne();
++    $user = User::factory()->hasAttached($firstOrganization)->withOrganization()->createOne();
 +    $currentOrganization = $user->currentOrganization;
-+
 +    $organization = $user->defaultOrganization();
 +
 +    expect($organization)
@@ -2691,11 +2714,8 @@ new file mode 100644
 +});
 +
 +it('returns the first membership as the default without switching organizations', function (): void {
-+    $organizations = Organization::factory()
-+        ->count(2);
-+    $user = User::factory()
-+        ->has($organizations, 'organizations')
-+        ->createOne();
++    $organizations = Organization::factory()->count(2);
++    $user = User::factory()->has($organizations, 'organizations')->createOne();
 +    $firstOrganization = $user->organizations->first();
 +    setPermissionsTeamId(123);
 +
@@ -2716,15 +2736,12 @@ new file mode 100644
 +});
 +
 +it('returns the oldest membership as the default when it was attached second', function (): void {
-+    $newerOrganization = Organization::factory()
-+        ->createOne();
-+    $olderOrganization = Organization::factory()
-+        ->createOne();
++    $newerOrganization = Organization::factory()->createOne();
++    $olderOrganization = Organization::factory()->createOne();
 +    $user = User::factory()
 +        ->hasAttached($newerOrganization, ['created_at' => '2025-01-02 00:00:00'])
 +        ->hasAttached($olderOrganization, ['created_at' => '2025-01-01 00:00:00'])
 +        ->createOne();
-+
 +    $organization = $user->defaultOrganization();
 +
 +    expect($organization)
@@ -2735,19 +2752,14 @@ new file mode 100644
 +});
 +
 +it('returns no default organization without memberships', function (): void {
-+    $user = User::factory()
-+        ->createOne();
-+
++    $user = User::factory()->createOne();
 +    $organization = $user->defaultOrganization();
 +
-+    expect($organization)
-+        ->toBeNull();
++    expect($organization)->toBeNull();
 +});
 +
 +it('does not switch organizations when loading currentOrganization without an active organization', function (): void {
-+    $user = User::factory()
-+        ->has(Organization::factory(), 'organizations')
-+        ->createOne();
++    $user = User::factory()->has(Organization::factory(), 'organizations')->createOne();
 +    setPermissionsTeamId(123);
 +
 +    $organization = $user->currentOrganization;
@@ -2767,7 +2779,6 @@ new file mode 100644
 +
 +it('cannot switch to an unrelated organization', function (): void {
 +    $unrelatedOrganization = Organization::factory()->createOne();
-+
 +    $user = User::factory()->createOne();
 +
 +    expect($user)
@@ -2785,16 +2796,11 @@ new file mode 100644
 +});
 +
 +it('changes role and direct permissions when switching the active organization', function (): void {
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++    $user = User::factory()->withOrganization()->createOne();
 +    $originalOrganization = $user->currentOrganization;
-+    $newOrganization = Organization::factory()
-+        ->recycle($user)
-+        ->createOne();
++    $newOrganization = Organization::factory()->recycle($user)->createOne();
 +
-+    $user->organizations()
-+        ->attach($newOrganization);
++    $user->organizations()->attach($newOrganization);
 +
 +    setPermissionsTeamId($originalOrganization->id);
 +
@@ -2850,12 +2856,9 @@ new file mode 100644
 +});
 +
 +it('keeps the active permission context when switching to an unrelated organization is rejected', function (): void {
-+    $user = User::factory()
-+        ->withOrganization()
-+        ->createOne();
++    $user = User::factory()->withOrganization()->createOne();
 +    $organization = $user->currentOrganization;
-+    $unrelatedOrganization = Organization::factory()
-+        ->createOne();
++    $unrelatedOrganization = Organization::factory()->createOne();
 +
 +    setPermissionsTeamId($organization->id);
 +
@@ -2897,7 +2900,7 @@ diff --git a/tests/Integration/Policies/OrganizationPolicyTest.php b/tests/Integ
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Policies/OrganizationPolicyTest.php
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,88 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -2918,7 +2921,10 @@ new file mode 100644
 +    expect(new OrganizationPolicy()->create($user))->toBeTrue();
 +});
 +
-+it('allows members with the required permission', function (string $ability, MembershipPermission $permission): void {
++it('allows members with the required permission', function (
++    string $ability,
++    MembershipPermission $permission,
++): void {
 +    $organization = Organization::factory()->createOne();
 +    $user = login(organization: $organization);
 +    $user->switchOrganization($organization);
@@ -2930,7 +2936,10 @@ new file mode 100644
 +    'view' => ['view', MembershipPermission::SettingsView],
 +]);
 +
-+it('denies members without the required permission', function (string $ability, MembershipPermission $permission): void {
++it('denies members without the required permission', function (
++    string $ability,
++    MembershipPermission $permission,
++): void {
 +    $organization = Organization::factory()->createOne();
 +    $user = login(organization: $organization);
 +    $user->switchOrganization($organization);
@@ -2952,7 +2961,10 @@ new file mode 100644
 +    expect($user->can('view', $organization))->toBeFalse();
 +});
 +
-+it('denies unrelated users even with the required permission', function (string $ability, MembershipPermission $permission): void {
++it('denies unrelated users even with the required permission', function (
++    string $ability,
++    MembershipPermission $permission,
++): void {
 +    $organization = Organization::factory()->createOne();
 +    $user = login();
 +    setPermissionsTeamId($organization->id);
@@ -3062,15 +3074,18 @@ diff --git a/tests/Pest.php b/tests/Pest.php
 -        freezeSecond();
 +        freezeSecond();
 +        setPermissionsTeamId(null);
-@@ -74,1 +77,1 @@
+@@ -84,1 +87,1 @@
 -function login(null|Authenticatable $user = null): User
 +function login(null|Authenticatable $user = null, null|Organization $organization = null): User
-@@ -76,1 +79,5 @@
+@@ -86,1 +89,8 @@
 -    $user ??= User::factory()->createOne();
 +    $user ??= User::factory()
-+        ->when($organization, function (UserFactory $factory, Organization $organization): UserFactory {
-+            return $factory->withOrganization($organization);
-+        })
++        ->when(
++            $organization,
++            function (UserFactory $factory, Organization $organization): UserFactory {
++                return $factory->withOrganization($organization);
++            },
++        )
 +        ->createOne();
 diff --git a/tests/Unit/Enums/MembershipPermissionTest.php b/tests/Unit/Enums/MembershipPermissionTest.php
 new file mode 100644
@@ -3162,15 +3177,15 @@ new file mode 100644
 +
 +it('identifies invitations in audit logs', function (): void {
 +    $invitation = new Invitation(['id' => 123]);
-+
 +    $identity = $invitation->auditLogIdentity();
 +
-+    expect($identity)
-+        ->id->toBe('123')
-+        ->type->toBe('invitation');
++    expect($identity)->id->toBe('123')->type->toBe('invitation');
 +});
 +
-+it('determines whether an invitation is expired', function (CarbonImmutable $expiresAt, bool $expired): void {
++it('determines whether an invitation is expired', function (
++    CarbonImmutable $expiresAt,
++    bool $expired,
++): void {
 +    $invitation = new Invitation(['expires_at' => $expiresAt]);
 +
 +    expect($invitation->isExpired())->toBe($expired);
@@ -3187,7 +3202,7 @@ diff --git a/tests/Unit/Models/OrganizationTest.php b/tests/Unit/Models/Organiza
 new file mode 100644
 --- /dev/null
 +++ b/tests/Unit/Models/OrganizationTest.php
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,30 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -3216,9 +3231,7 @@ new file mode 100644
 +it('identifies itself in audit logs', function (): void {
 +    $organization = new Organization(['id' => 7]);
 +
-+    expect($organization->auditLogIdentity())
-+        ->id->toBe('7')
-+        ->type->toBe('organization');
++    expect($organization->auditLogIdentity())->id->toBe('7')->type->toBe('organization');
 +});
 diff --git a/tests/Unit/Models/UserTest.php b/tests/Unit/Models/UserTest.php
 --- a/tests/Unit/Models/UserTest.php

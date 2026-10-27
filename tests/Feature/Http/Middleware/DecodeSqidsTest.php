@@ -17,7 +17,6 @@ it('decodes configured sqid request fields', function (): void {
         ]));
 
     $sqid = resolve(Sqid::class);
-
     $response = postJson('/_test', [
         'parent_id' => $sqid->encode(456),
         'related_id' => $sqid->encode(123),
@@ -37,7 +36,6 @@ it('rejects sqids with different casing', function (): void {
 
     $sqid = resolve(Sqid::class);
     $uppercaseSqid = Str::upper($sqid->encode(123));
-
     $response = postJson('/_test', [
         'related_id' => $uppercaseSqid,
     ]);

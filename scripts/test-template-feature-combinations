@@ -224,8 +224,8 @@ for ((mask = 1; mask <= total; mask++)); do
         exit 1
     fi
 
-    if ! (cd "$scenario" && "$repository_root/vendor/bin/pint" --test --format agent > "$scenario/pint.log" 2>&1); then
-        cat "$scenario/pint.log" >&2
+    if ! (cd "$scenario" && "$repository_root/vendor/bin/ecs" check --no-progress-bar > "$scenario/ecs.log" 2>&1); then
+        cat "$scenario/ecs.log" >&2
 
         exit 1
     fi

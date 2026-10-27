@@ -10,7 +10,7 @@ it('round trips a single integer identifier', function (int $id): void {
 
     expect($sqid)->toBeString()->toHaveLength(10)
         ->and(resolve(Sqid::class)->decode($sqid))->toBe($id);
-})->with([0, 1, 123456789]);
+})->with([0, 1, 123_456_789]);
 
 it('rejects malformed and compound identifiers', function (): void {
     $compound = resolve(SqidsInterface::class)->encode([1, 2]);

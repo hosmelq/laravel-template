@@ -15,11 +15,11 @@ pre-commit:
             run: composer rector -- {staged_files}
             stage_fixed: true
 
-          - name: Pint (fix)
+          - name: ECS (fix)
             glob: '**/*.php'
             exclude:
               - '**/*.blade.php'
-            run: composer pint -- {staged_files}
+            run: composer ecs -- {staged_files}
             stage_fixed: true
 
           - name: PHPStan

@@ -39,7 +39,7 @@ class InstallTemplateCommand extends Command
 
         $this->components->info('Installed: '.implode(', ', array_map(
             static fn (TemplateFeature $feature): string => $feature->label(),
-            $pending
+            $pending,
         )));
 
         return self::SUCCESS;
@@ -59,7 +59,7 @@ class InstallTemplateCommand extends Command
         $selected = multiselect(
             label: 'Which features do you want to install?',
             options: $options,
-            required: true
+            required: true,
         );
 
         return array_values(array_map(TemplateFeature::from(...), $selected));

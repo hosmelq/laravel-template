@@ -19,12 +19,7 @@ pest()
     })
     ->in('Feature', 'Integration', 'Unit');
 
-pest()
-    ->tia()
-    ->always()
-    ->baselined()
-    ->defaultBranch('main')
-    ->locally();
+pest()->tia()->always()->baselined()->defaultBranch('main')->locally();
 
 /**
  * @param iterable<Model>|Model $models
@@ -43,29 +38,44 @@ function assertDatabaseLockedForUpdate(iterable|Model $models, null|string $conn
         });
     $queries = [];
 
-    Event::listen(QueryExecuted::class, function (QueryExecuted $query) use (&$queries, $expectedLocks): void {
-        if ($expectedLocks->contains(fn (array $expected): bool => $expected['connection'] === null || $query->connectionName === $expected['connection'])) {
-            $queries[] = [
-                'bindings' => $query->bindings,
-                'connection' => $query->connectionName,
-                'sql' => $query->sql,
-            ];
-        }
-    });
+    Event::listen(
+        QueryExecuted::class,
+        function (QueryExecuted $query) use (&$queries, $expectedLocks): void {
+            if ($expectedLocks->contains(
+                fn (array $expected): bool
+                    => $expected['connection'] === null
+                        || $query->connectionName === $expected['connection'],
+            )) {
+                $queries[] = [
+                    'bindings' => $query->bindings,
+                    'connection' => $query->connectionName,
+                    'sql' => $query->sql,
+                ];
+            }
+        },
+    );
 
     test()->beforeApplicationDestroyed(function () use (&$queries, $expectedLocks): void {
         foreach ($expectedLocks as $expected) {
             test()->assertTrue(
-                collect($queries)->contains(fn (array $query): bool => ($expected['connection'] === null || $query['connection'] === $expected['connection'])
-                    && str_contains($query['sql'], sprintf('"%s"', $expected['table']))
-                    && str_contains($query['sql'], sprintf('"%s"', $expected['keyName']))
-                    && in_array($expected['key'], $query['bindings'], true)
-                    && str_contains($query['sql'], 'for update')),
+                collect($queries)->contains(
+                    fn (array $query): bool
+                        => (
+                            $expected['connection'] === null
+                            || $query['connection'] === $expected['connection']
+                        )
+                            && str_contains($query['sql'], sprintf('"%s"', $expected['table']))
+                            && str_contains($query['sql'], sprintf('"%s"', $expected['keyName']))
+                            && in_array($expected['key'], $query['bindings'], true)
+                            && str_contains($query['sql'], 'for update'),
+                ),
                 sprintf(
                     'Expected a database query%s to lock [%s] for update.',
-                    $expected['connection'] === null ? '' : sprintf(' on the [%s] connection', $expected['connection']),
+                    $expected['connection'] === null
+                        ? ''
+                        : sprintf(' on the [%s] connection', $expected['connection']),
                     $expected['table'],
-                )
+                ),
             );
         }
     });

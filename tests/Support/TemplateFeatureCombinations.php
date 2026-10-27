@@ -25,7 +25,9 @@ final class TemplateFeatureCombinations
                 }
             }
 
-            $combinations[implode(' and ', array_column($selectedFeatures, 'value'))] = [$selectedFeatures];
+            $combinations[implode(' and ', array_column($selectedFeatures, 'value'))] = [
+                $selectedFeatures,
+            ];
         }
 
         ksort($combinations);

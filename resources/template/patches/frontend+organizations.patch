@@ -2,7 +2,7 @@ diff --git a/app/Http/Controllers/InvitationController.php b/app/Http/Controller
 new file mode 100644
 --- /dev/null
 +++ b/app/Http/Controllers/InvitationController.php
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,79 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -31,7 +31,11 @@ new file mode 100644
 +            ->where('token', hash('sha256', $token))
 +            ->firstOrFail();
 +
-+        if (! $user instanceof User && $invitation->accepted_at === null && ! $invitation->isExpired()) {
++        if (
++            ! $user instanceof User
++            && $invitation->accepted_at === null
++            && ! $invitation->isExpired()
++        ) {
 +            Redirect::setIntendedUrl(route('invitations.show', ['token' => $token]));
 +        }
 +
@@ -55,22 +59,26 @@ new file mode 100644
 +        #[CurrentUser] User $user,
 +        AcceptInvitation $acceptInvitation,
 +    ): RedirectResponse {
-+        $invitation = DB::transaction(function () use ($acceptInvitation, $token, $user): Invitation {
-+            $invitation = Invitation::query()
-+                ->where('token', hash('sha256', $token))
-+                ->lockForUpdate()
-+                ->firstOrFail();
++        $invitation = DB::transaction(
++            function () use ($acceptInvitation, $token, $user): Invitation {
++                $invitation = Invitation::query()
++                    ->where('token', hash('sha256', $token))
++                    ->lockForUpdate()
++                    ->firstOrFail();
 +
-+            abort_if($invitation->accepted_at !== null || $invitation->isExpired(), 410);
-+            abort_unless($user->email === $invitation->email, 403);
++                abort_if($invitation->accepted_at !== null || $invitation->isExpired(), 410);
++                abort_unless($user->email === $invitation->email, 403);
 +
-+            $acceptInvitation->handle($user, $invitation);
++                $acceptInvitation->handle($user, $invitation);
 +
-+            return $invitation;
-+        });
++                return $invitation;
++            },
++        );
 +
 +        return $user->can(MembershipPermission::SettingsView)
-+            ? to_route('organizations.settings.general', ['organization' => $invitation->organization])
++            ? to_route('organizations.settings.general', [
++                'organization' => $invitation->organization,
++            ])
 +            : to_route('home');
 +    }
 +}
@@ -161,15 +169,17 @@ diff --git a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware
 @@ -27,1 +28,1 @@
 -     * @return array{user: null|JsonResource}
 +     * @return array{organization: null|JsonResource, permissions: list<string>, user: null|JsonResource}
-@@ -33,1 +34,7 @@
+@@ -33,1 +34,9 @@
 -        return [
 +        return [
 +            'organization' => $user?->currentOrganization?->toResource(),
-+            'permissions' => $user?->currentOrganization === null ? [] : array_values(collect(MembershipPermission::cases())
-+                ->filter(fn (MembershipPermission $permission): bool => $user->can($permission))
-+                ->map(fn (MembershipPermission $permission): string => $permission->value)
-+                ->sort()
-+                ->all()),
++            'permissions' => $user?->currentOrganization === null
++                ? []
++                : array_values(collect(MembershipPermission::cases())
++                    ->filter(fn (MembershipPermission $permission): bool => $user->can($permission))
++                    ->map(fn (MembershipPermission $permission): string => $permission->value)
++                    ->sort()
++                    ->all()),
 diff --git a/app/Http/Resources/UserResource.php b/app/Http/Resources/UserResource.php
 --- a/app/Http/Resources/UserResource.php
 +++ b/app/Http/Resources/UserResource.php
@@ -553,24 +563,28 @@ diff --git a/routes/web.php b/routes/web.php
 +})->name('home');
 +
 +Route::get('invitations/{token}', [InvitationController::class, 'show'])->name('invitations.show');
-@@ -18,1 +22,3 @@
+@@ -17,1 +21,4 @@
 -Route::middleware('auth')->group(function (): void {
 +Route::middleware('auth')->group(function (): void {
-+    Route::post('invitations/{token}/accept', [InvitationController::class, 'store'])->name('invitations.accept');
++    Route::post('invitations/{token}/accept', [InvitationController::class, 'store'])
++        ->name('invitations.accept');
 +
-@@ -19,1 +25,6 @@
--    Route::middleware('verified')->scopeBindings()->group(function (): void {
+@@ -18,1 +25,9 @@
+-    Route::middleware('verified')->scopeBindings()->group(function (): void {});
 +    Route::middleware('verified')->scopeBindings()->group(function (): void {
-+        Route::get('organizations/{organization}/settings/general', [OrganizationController::class, 'show'])
-+            ->name('organizations.settings.general');
++        Route::get(
++            'organizations/{organization}/settings/general',
++            [OrganizationController::class, 'show'],
++        )->name('organizations.settings.general');
 +
 +        Route::resource('organizations', OrganizationController::class)
 +            ->only(['create', 'store', 'update']);
++    });
 diff --git a/tests/Feature/Http/Controllers/InvitationControllerTest.php b/tests/Feature/Http/Controllers/InvitationControllerTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/Controllers/InvitationControllerTest.php
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,170 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -643,12 +657,17 @@ new file mode 100644
 +
 +    it('does not accept the matching account through a GET request', function (): void {
 +        $user = login();
-+        $invitation = Invitation::factory()->withToken('invitation-token')->createOne(['email' => $user->email]);
++        $invitation = Invitation::factory()
++            ->withToken('invitation-token')
++            ->createOne(['email' => $user->email]);
 +
 +        get(route('invitations.show', 'invitation-token'))->assertOk();
 +
 +        expect($invitation->fresh()->accepted_at)->toBeNull();
-+        assertDatabaseMissing('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++        assertDatabaseMissing('organization_user', [
++            'organization_id' => $invitation->organization_id,
++            'user_id' => $user->id,
++        ]);
 +    });
 +});
 +
@@ -665,11 +684,17 @@ new file mode 100644
 +
 +    it('rejects expired or accepted invitations', function (string $state): void {
 +        $user = login();
-+        $invitation = Invitation::factory()->withToken('invitation-token')->{$state}()->createOne(['email' => $user->email]);
++        $invitation = Invitation::factory()
++            ->withToken('invitation-token')
++            ->{$state}()
++            ->createOne(['email' => $user->email]);
 +
 +        post(route('invitations.accept', 'invitation-token'))->assertGone();
 +
-+        assertDatabaseMissing('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++        assertDatabaseMissing('organization_user', [
++            'organization_id' => $invitation->organization_id,
++            'user_id' => $user->id,
++        ]);
 +        expect($user->fresh()->current_organization_id)->toBeNull();
 +    })->with(['accepted', 'expired']);
 +
@@ -680,20 +705,31 @@ new file mode 100644
 +        post(route('invitations.accept', 'invitation-token'))->assertForbidden();
 +
 +        expect($invitation->fresh()->accepted_at)->toBeNull();
-+        assertDatabaseMissing('organization_user', ['organization_id' => $invitation->organization_id, 'user_id' => $user->id]);
++        assertDatabaseMissing('organization_user', [
++            'organization_id' => $invitation->organization_id,
++            'user_id' => $user->id,
++        ]);
 +    });
 +
-+    it('accepts the invitation and switches the active organization', function (MembershipRole $role, string $route): void {
++    it('accepts the invitation and switches the active organization', function (
++        MembershipRole $role,
++        string $route,
++    ): void {
 +        $originalOrganization = Organization::factory()->createOne();
 +        $user = login(organization: $originalOrganization);
 +        $user->switchOrganization($originalOrganization);
 +        $user->assignRole(MembershipRole::Viewer);
 +        $user->load(['organizations', 'permissions', 'roles']);
 +
-+        $invitation = Invitation::factory()->withToken('invitation-token')->createOne(['email' => $user->email, 'role' => $role]);
++        $invitation = Invitation::factory()
++            ->withToken('invitation-token')
++            ->createOne(['email' => $user->email, 'role' => $role]);
 +
 +        post(route('invitations.accept', 'invitation-token'))
-+            ->assertRedirectToRoute($route, $route === 'home' ? [] : ['organization' => $invitation->organization]);
++            ->assertRedirectToRoute(
++                $route,
++                $route === 'home' ? [] : ['organization' => $invitation->organization],
++            );
 +
 +        $user->refresh();
 +        expect($user)->current_organization_id->toBe($invitation->organization_id)
@@ -723,7 +759,7 @@ diff --git a/tests/Feature/Http/Controllers/OrganizationControllerTest.php b/tes
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/Controllers/OrganizationControllerTest.php
-@@ -0,0 +1,233 @@
+@@ -0,0 +1,248 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -859,7 +895,12 @@ new file mode 100644
 +    it('validates fields', function (array $data): void {
 +        login();
 +
-+        postJson(route('organizations.store'), $data)->assertUnprocessable()->assertJsonValidationErrors('name');
++        postJson(
++            route('organizations.store'),
++            $data,
++        )->assertUnprocessable()->assertJsonValidationErrors(
++            'name',
++        );
 +    })->with([
 +        'max:255' => [['name' => Str::repeat('a', 256)]],
 +        'required' => [[]],
@@ -868,7 +909,6 @@ new file mode 100644
 +
 +    it('creates an organization and switches to it as owner', function (): void {
 +        $user = login();
-+
 +        $response = post(route('organizations.store'), ['name' => 'Acme']);
 +        $organization = Organization::query()->sole();
 +        $user->refresh();
@@ -896,7 +936,9 @@ new file mode 100644
 +        $organization = Organization::factory()->createOne();
 +        login(organization: Organization::factory()->createOne());
 +
-+        patch(route('organizations.update', $organization), ['name' => 'Changed'])->assertForbidden();
++        patch(route('organizations.update', $organization), [
++            'name' => 'Changed',
++        ])->assertForbidden();
 +
 +        expect($organization->fresh()->name)->toBe($organization->name);
 +    });
@@ -908,7 +950,9 @@ new file mode 100644
 +        $user->assignRole(MembershipRole::Viewer);
 +        $user->givePermissionTo(MembershipPermission::SettingsView);
 +
-+        patch(route('organizations.update', $organization), ['name' => 'Changed'])->assertForbidden();
++        patch(route('organizations.update', $organization), [
++            'name' => 'Changed',
++        ])->assertForbidden();
 +
 +        expect($organization->fresh()->name)->toBe($organization->name);
 +    });
@@ -923,7 +967,9 @@ new file mode 100644
 +        $user->unsetRelation('organizations');
 +        $user->switchOrganization($organization);
 +
-+        patch(route('organizations.update', $organization), ['name' => 'Changed'])->assertForbidden();
++        patch(route('organizations.update', $organization), [
++            'name' => 'Changed',
++        ])->assertForbidden();
 +
 +        expect($organization->fresh()->name)->toBe($organization->name);
 +    });
@@ -934,7 +980,12 @@ new file mode 100644
 +        $user->switchOrganization($organization);
 +        $user->assignRole(MembershipRole::Admin);
 +
-+        patchJson(route('organizations.update', $organization), $data)->assertUnprocessable()->assertJsonValidationErrors('name');
++        patchJson(
++            route('organizations.update', $organization),
++            $data,
++        )->assertUnprocessable()->assertJsonValidationErrors(
++            'name',
++        );
 +    })->with([
 +        'max:255' => [['name' => Str::repeat('a', 256)]],
 +        'required' => [['name' => '']],
@@ -992,10 +1043,8 @@ diff --git a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php b/tests
 @@ -19,1 +30,1 @@
 -it('shares the authenticated user resource', function (): void {
 +it('shares the authenticated user without an organization or permissions', function (): void {
-@@ -26,3 +37,57 @@
--    expect($shared['auth']['user'])
--        ->toBeInstanceOf(UserResource::class)
--        ->resource->toBe($user);
+@@ -26,1 +37,64 @@
+-    expect($shared['auth']['user'])->toBeInstanceOf(UserResource::class)->resource->toBe($user);
 +    expect($shared['auth']['organization'])->toBeNull()
 +        ->and($shared['auth']['permissions'])->toBe([])
 +        ->and($shared['auth']['user'])->toBeInstanceOf(UserResource::class)->resource->toBe($user);
@@ -1012,7 +1061,11 @@ diff --git a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php b/tests
 +
 +    $shared = resolve(HandleInertiaRequests::class)->share($request);
 +
-+    expect($shared['auth']['organization'])->toBeInstanceOf(OrganizationResource::class)->resource->is($organization)->toBeTrue()
++    expect($shared['auth']['organization'])->toBeInstanceOf(
++        OrganizationResource::class,
++    )->resource->is(
++        $organization,
++    )->toBeTrue()
 +        ->and($shared['auth']['permissions'])->toBe(MembershipPermission::values());
 +});
 +
@@ -1052,7 +1105,10 @@ diff --git a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php b/tests
 +    $user->givePermissionTo([MembershipPermission::TeamView, MembershipPermission::SettingsView]);
 +
 +    get(route('home'))->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-+        ->where('auth.permissions', [MembershipPermission::SettingsView->value, MembershipPermission::TeamView->value]));
++        ->where(
++            'auth.permissions',
++            [MembershipPermission::SettingsView->value, MembershipPermission::TeamView->value],
++        ));
 diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integration/Http/Resources/UserResourceTest.php
 --- a/tests/Integration/Http/Resources/UserResourceTest.php
 +++ b/tests/Integration/Http/Resources/UserResourceTest.php
@@ -1060,17 +1116,17 @@ diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integ
 -
 +
 +use App\Models\Organization;
-@@ -14,1 +15,1 @@
+@@ -13,1 +14,1 @@
 -    expect([
 +    expect($resource)->toEqual([
-@@ -19,1 +20,2 @@
+@@ -18,1 +19,2 @@
 -        'created_at' => $user->created_at->toJSON(),
 +        'created_at' => $user->created_at->toJSON(),
 +        'current_organization' => null,
-@@ -25,1 +27,1 @@
+@@ -24,1 +26,1 @@
 -        'name' => $user->name,
 +        'name' => $user->name->full(),
-@@ -27,1 +29,11 @@
+@@ -26,1 +28,10 @@
 -    ])->toMatchArray($resource);
 +    ]);
 +});
@@ -1078,7 +1134,6 @@ diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integ
 +it('includes the current organization', function (): void {
 +    $organization = Organization::factory()->createOne();
 +    $user = User::factory()->withOrganization($organization)->createOne();
-+
 +    $resource = json_decode($user->toResource()->toJson(), true);
 +
 +    expect($resource['current_organization'])

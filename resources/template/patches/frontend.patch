@@ -496,7 +496,7 @@ diff --git a/app/Http/Middleware/SetLocale.php b/app/Http/Middleware/SetLocale.p
 new file mode 100644
 --- /dev/null
 +++ b/app/Http/Middleware/SetLocale.php
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,36 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -521,7 +521,9 @@ new file mode 100644
 +        $locale = is_string($cookieLocale) ? Locale::tryFrom($cookieLocale) : null;
 +
 +        if ($locale === null) {
-+            $locale = Locale::from($request->getPreferredLanguage(Locale::values()) ?? Locale::English());
++            $locale = Locale::from(
++                $request->getPreferredLanguage(Locale::values()) ?? Locale::English(),
++            );
 +
 +            Cookie::queue(Cookie::forever('locale', $locale->value));
 +        }
@@ -562,7 +564,7 @@ new file mode 100644
 +        return [
 +            'avatar_url' => sprintf(
 +                'https://www.gravatar.com/avatar/%s?d=mp',
-+                Str::of($this->resource->email)->trim()->lower()->hash('sha256')
++                Str::of($this->resource->email)->trim()->lower()->hash('sha256'),
 +            ),
 +            'created_at' => $this->resource->created_at,
 +            'email' => $this->resource->email,
@@ -612,12 +614,12 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +
 +        DevCommands::register(
 +            <<<'COMMAND'
-+            nub exec portless run sh -c 'exec php artisan octane:start --admin-port="$((PORT + 10000))" --host="$HOST" --port="$PORT" --watch'
-+            COMMAND,
++                nub exec portless run sh -c 'exec php artisan octane:start --admin-port="$((PORT + 10000))" --host="$HOST" --port="$PORT" --watch'
++                COMMAND,
 +            'server',
 +        );
 +        DevCommands::register('nub exec portless run --name template-vite nub run dev', 'vite');
-@@ -112,1 +112,20 @@
+@@ -114,1 +129,20 @@
 -    private function configureUrls(): void
 +    private function configureRouteMacros(): void
 +    {
@@ -625,11 +627,11 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +            string $title,
 +            null|string $description = null,
 +            ToastVariant $variant = ToastVariant::Success,
-+            int $timeout = 5
++            int $timeout = 5,
 +        ): RedirectResponse {
 +            Inertia::flash(FlashKey::Toast(), array_filter([
 +                'description' => $description,
-+                'timeout' => $timeout * 1000,
++                'timeout' => $timeout * 1_000,
 +                'title' => $title,
 +                'variant' => $variant->value,
 +            ], fn (null|int|string $value): bool => $value !== null));
@@ -639,7 +641,7 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 +    }
 +
 +    private function configureUrls(): void
-@@ -116,1 +116,6 @@
+@@ -118,1 +152,6 @@
 -}
 +
 +    private function configureVite(): void
@@ -696,11 +698,11 @@ new file mode 100644
 +    string $title,
 +    null|string $description = null,
 +    ToastVariant $variant = ToastVariant::Success,
-+    int $timeout = 5
++    int $timeout = 5,
 +): void {
 +    Inertia::flash(FlashKey::Toast(), array_filter([
 +        'description' => $description,
-+        'timeout' => $timeout * 1000,
++        'timeout' => $timeout * 1_000,
 +        'title' => $title,
 +        'variant' => $variant->value,
 +    ], fn (null|int|string $value): bool => $value !== null));
@@ -1769,7 +1771,7 @@ diff --git a/routes/web.php b/routes/web.php
 +use Illuminate\Support\Facades\Route;
 +use Inertia\Inertia;
 +use Inertia\Response;
-@@ -7,3 +9,13 @@
+@@ -7,3 +9,11 @@
 -Route::get('/', fn (): array => [
 -    'laravel' => app()->version(),
 -])->name('home');
@@ -1779,12 +1781,10 @@ diff --git a/routes/web.php b/routes/web.php
 +    ]);
 +})->name('home');
 +
-+Route::middleware('guest')->group(function (): void {
-+});
++Route::middleware('guest')->group(function (): void {});
 +
 +Route::middleware('auth')->group(function (): void {
-+    Route::middleware('verified')->scopeBindings()->group(function (): void {
-+    });
++    Route::middleware('verified')->scopeBindings()->group(function (): void {});
 +});
 diff --git a/scripts/services-start b/scripts/services-start
 --- a/scripts/services-start
@@ -1820,7 +1820,7 @@ diff --git a/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php b/tests
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/Middleware/HandleInertiaRequestsTest.php
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,27 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1846,9 +1846,7 @@ new file mode 100644
 +
 +    $shared = resolve(HandleInertiaRequests::class)->share($request);
 +
-+    expect($shared['auth']['user'])
-+        ->toBeInstanceOf(UserResource::class)
-+        ->resource->toBe($user);
++    expect($shared['auth']['user'])->toBeInstanceOf(UserResource::class)->resource->toBe($user);
 +});
 diff --git a/tests/Feature/Http/Middleware/SetLocaleTest.php b/tests/Feature/Http/Middleware/SetLocaleTest.php
 new file mode 100644
@@ -1897,7 +1895,7 @@ diff --git a/tests/Integration/Http/Resources/UserResourceTest.php b/tests/Integ
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Http/Resources/UserResourceTest.php
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,27 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1908,13 +1906,12 @@ new file mode 100644
 +    $user = User::factory()->createOne([
 +        'email' => ' TEST@example.com ',
 +    ]);
-+
 +    $resource = json_decode($user->toResource()->toJson(), true);
 +
 +    expect([
 +        'avatar_url' => sprintf(
 +            'https://www.gravatar.com/avatar/%s?d=mp',
-+            '973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b'
++            '973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b',
 +        ),
 +        'created_at' => $user->created_at->toJSON(),
 +        'email' => $user->email,
@@ -1954,18 +1951,18 @@ diff --git a/tests/Pest.php b/tests/Pest.php
 +    ->beforeEach(function (): void {
 +        freezeSecond();
 +        withoutVite();
-@@ -73,1 +86,15 @@
+@@ -83,1 +96,15 @@
 -
 +
 +TestResponse::macro('assertToast', function (
 +    string $title,
 +    null|string $description = null,
 +    ToastVariant $variant = ToastVariant::Success,
-+    int $timeout = 5
++    int $timeout = 5,
 +): TestResponse {
 +    return $this->assertSessionHas('inertia.flash_data.toast', array_filter([
 +        'description' => $description,
-+        'timeout' => $timeout * 1000,
++        'timeout' => $timeout * 1_000,
 +        'title' => $title,
 +        'variant' => $variant->value,
 +    ], static fn (null|int|string $value): bool => $value !== null));

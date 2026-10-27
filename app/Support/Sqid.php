@@ -8,9 +8,7 @@ use Sqids\SqidsInterface;
 
 class Sqid
 {
-    public function __construct(private readonly SqidsInterface $sqids)
-    {
-    }
+    public function __construct(private readonly SqidsInterface $sqids) {}
 
     public function decode(string $sqid): null|int
     {

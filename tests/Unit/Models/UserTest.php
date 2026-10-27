@@ -33,8 +33,7 @@ it('determines admin status based on config allowlist', function (): void {
     $admin = new User(['email' => 'owner@example.com']);
     $user = new User(['email' => 'user@example.com']);
 
-    expect($admin->isAdmin())->toBeTrue()
-        ->and($user->isAdmin())->toBeFalse();
+    expect($admin->isAdmin())->toBeTrue()->and($user->isAdmin())->toBeFalse();
 });
 
 it('allows only admins to access the admin panel', function (): void {
@@ -56,11 +55,7 @@ it('normalizes email addresses when assigned', function (): void {
 
 it('identifies itself in audit logs', function (): void {
     $user = User::factory()->makeOne(['email' => 'owner@example.com', 'id' => 7]);
-
     $identity = $user->auditLogIdentity();
 
-    expect($identity)
-        ->id->toBe('7')
-        ->name->toBe('owner@example.com')
-        ->type->toBe('user');
+    expect($identity)->id->toBe('7')->name->toBe('owner@example.com')->type->toBe('user');
 });

@@ -244,7 +244,7 @@ diff --git a/routes/console.php b/routes/console.php
 diff --git a/routes/web.php b/routes/web.php
 --- a/routes/web.php
 +++ b/routes/web.php
-@@ -5,1 +5,7 @@
+@@ -5,1 +5,10 @@
 -use Illuminate\Support\Facades\Route;
 +use Illuminate\Support\Facades\Route;
 +use Spatie\Health\Http\Controllers\HealthCheckResultsController;
@@ -252,12 +252,15 @@ diff --git a/routes/web.php b/routes/web.php
 +
 +Route::get('/up', SimpleHealthCheckController::class);
 +
-+Route::middleware(['auth', 'verified', 'can:admin'])->get('/health', HealthCheckResultsController::class);
++Route::middleware(['auth', 'verified', 'can:admin'])->get(
++    '/health',
++    HealthCheckResultsController::class,
++);
 diff --git a/tests/Feature/Http/HealthTest.php b/tests/Feature/Http/HealthTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/HealthTest.php
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,52 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -282,8 +285,7 @@ new file mode 100644
 +
 +    $response = get('/up?fresh');
 +
-+    $response->assertOk()
-+        ->assertExactJson(['healthy' => true]);
++    $response->assertOk()->assertExactJson(['healthy' => true]);
 +});
 +
 +it('rejects guests from the health check results', function (): void {

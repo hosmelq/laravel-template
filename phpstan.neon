@@ -1,45 +1,6 @@
 includes:
-  - vendor/spaze/phpstan-disallowed-calls/disallowed-dangerous-calls.neon
-  - vendor/spaze/phpstan-disallowed-calls/disallowed-execution-calls.neon
-  - vendor/spaze/phpstan-disallowed-calls/disallowed-insecure-calls.neon
-  - vendor/spaze/phpstan-disallowed-calls/disallowed-loose-calls.neon
+  - vendor/hosmelq/php-coding-standard/config/phpstan-laravel-app.neon
 
 parameters:
-  checkAuthCallsWhenInRequestScope: true
-  checkBenevolentUnionTypes: true
-  checkConfigTypes: true
-  checkModelProperties: false
-  checkOctaneCompatibility: true
-  editorUrl: 'phpstorm://open?file=%%file%%&line=%%line%%'
-  errorFormat: ticketswap
-  excludePaths:
-    analyse:
-      - bootstrap/cache
-  level: max
-  noEnvCallsOutsideOfConfig: true
-  noUnnecessaryEnumerableToArrayCalls: true
   paths:
-    - app
-    - bootstrap
-    - config
     - config-validation
-    - database
-    - routes
-  strictRules:
-    dynamicCallOnStaticMethod: false
-  type_coverage:
-    constant: 100
-    param: 100
-    property: 100
-    return: 100
-  type_perfect:
-    no_mixed: true
-    null_over_false: true
-    narrow_param: true
-    narrow_return: true
-    no_empty_on_object: true
-    no_isset_on_object: true
-    no_param_type_removal: true
-  tips:
-    treatPhpDocTypesAsCertain: false
-  tmpDir: .cache/phpstan

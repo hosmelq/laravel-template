@@ -11,9 +11,7 @@ use RuntimeException;
 
 class FeatureInstaller
 {
-    public function __construct(private readonly Filesystem $files)
-    {
-    }
+    public function __construct(private readonly Filesystem $files) {}
 
     /**
      * @param list<TemplateFeature> $features
@@ -51,7 +49,7 @@ class FeatureInstaller
     {
         return array_values(array_filter(
             $features,
-            fn (TemplateFeature $feature): bool => ! $this->isInstalled($feature)
+            fn (TemplateFeature $feature): bool => ! $this->isInstalled($feature),
         ));
     }
 
@@ -60,8 +58,14 @@ class FeatureInstaller
      */
     private function applyPatches(array $patches): void
     {
-        $this->run(['git', 'apply', '--check', '--unidiff-zero', ...$patches], 'Unable to apply the selected features.');
-        $this->run(['git', 'apply', '--unidiff-zero', ...$patches], 'Unable to apply the selected features.');
+        $this->run(
+            ['git', 'apply', '--check', '--unidiff-zero', ...$patches],
+            'Unable to apply the selected features.',
+        );
+        $this->run(
+            ['git', 'apply', '--unidiff-zero', ...$patches],
+            'Unable to apply the selected features.',
+        );
     }
 
     /**
@@ -94,7 +98,9 @@ class FeatureInstaller
                 continue;
             }
 
-            $patch = resource_path(sprintf('template/patches/%s.patch', implode('+', $combination)));
+            $patch = resource_path(
+                sprintf('template/patches/%s.patch', implode('+', $combination)),
+            );
 
             if (is_file($patch)) {
                 $groups[count($combination)][] = $patch;
@@ -156,7 +162,7 @@ class FeatureInstaller
         throw_unless(
             $emptyDirectoriesDeleted && $filesDeleted && $templateDirectoryDeleted,
             RuntimeException::class,
-            'The template installer files could not be removed.'
+            'The template installer files could not be removed.',
         );
     }
 
@@ -185,19 +191,31 @@ class FeatureInstaller
         ], 'Laravel could not discover the installed packages.');
 
         if ($this->files->isFile(base_path('package.json'))) {
-            $this->run(['nub', 'install'], 'The frontend dependencies could not be installed.', forever: true);
-            $this->run(['nub', 'run', 'build'], 'The frontend assets could not be built.', forever: true);
+            $this->run(
+                ['nub', 'install'],
+                'The frontend dependencies could not be installed.',
+                forever: true,
+            );
+            $this->run(
+                ['nub', 'run', 'build'],
+                'The frontend assets could not be built.',
+                forever: true,
+            );
         }
 
         if ($this->files->isFile(base_path('.railway/package.json'))) {
             $this->run(
                 ['nub', '--cwd', '.railway', 'install'],
                 'The Railway dependencies could not be installed.',
-                forever: true
+                forever: true,
             );
         }
 
-        $this->run(['mise', 'run', 'setup:agent'], 'The agent setup could not be completed.', forever: true);
+        $this->run(
+            ['mise', 'run', 'setup:agent'],
+            'The agent setup could not be completed.',
+            forever: true,
+        );
     }
 
     private function isInstalled(TemplateFeature $feature): bool
@@ -228,7 +246,7 @@ class FeatureInstaller
                 TemplateFeature::Organizations,
                 TemplateFeature::Railway,
             ],
-            static fn (TemplateFeature $feature): bool => in_array($feature, $features, true)
+            static fn (TemplateFeature $feature): bool => in_array($feature, $features, true),
         ));
     }
 

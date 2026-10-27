@@ -74,11 +74,11 @@ run = "php artisan dev"
 
 [tasks."push:check"]
 depends = ["services:start"]
-description = "Runs the affected tests, PHPStan, Pint and Rector before a push."
+description = "Runs the affected tests, ECS, PHPStan and Rector before a push."
 run = [
   "vendor/bin/pest --parallel",
+  "composer ecs:check",
   "composer phpstan",
-  "composer pint -- --test",
   "composer rector -- --dry-run",
 ]
 
@@ -134,8 +134,8 @@ run = [
   "composer normalize --dry-run",
   "composer dump-autoload --optimize --strict-psr",
   "vendor/bin/pest --ci --parallel",
+  "composer ecs:check",
   "composer phpstan",
-  "composer pint -- --test",
   "composer rector -- --dry-run",
 ]
 

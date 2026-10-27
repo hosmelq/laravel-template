@@ -2,7 +2,7 @@ diff --git a/app/Listeners/SetMediaDimensions.php b/app/Listeners/SetMediaDimens
 new file mode 100644
 --- /dev/null
 +++ b/app/Listeners/SetMediaDimensions.php
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,39 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -22,7 +22,11 @@ new file mode 100644
 +    public function handle(MediaHasBeenAddedEvent $event): void
 +    {
 +        try {
-+            if (! in_array(Str::lower($event->media->mime_type), ['image/jpeg', 'image/jpg', 'image/png'], true)) {
++            if (! in_array(
++                Str::lower($event->media->mime_type),
++                ['image/jpeg', 'image/jpg', 'image/png'],
++                true,
++            )) {
 +                return;
 +            }
 +
@@ -128,7 +132,7 @@ diff --git a/config-validation/filesystems.php b/config-validation/filesystems.p
 new file mode 100644
 --- /dev/null
 +++ b/config-validation/filesystems.php
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,23 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -137,11 +141,19 @@ new file mode 100644
 +
 +return [
 +
-+    Rule::make('disks.s3.bucket')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
-+    Rule::make('disks.s3.endpoint')->rules(['nullable', 'url:https'])->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.bucket')
++        ->rules(['required', 'string'])
++        ->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.endpoint')
++        ->rules(['nullable', 'url:https'])
++        ->environments([Rule::ENV_PRODUCTION]),
 +    Rule::make('disks.s3.key')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
-+    Rule::make('disks.s3.region')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
-+    Rule::make('disks.s3.secret')->rules(['required', 'string'])->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.region')
++        ->rules(['required', 'string'])
++        ->environments([Rule::ENV_PRODUCTION]),
++    Rule::make('disks.s3.secret')
++        ->rules(['required', 'string'])
++        ->environments([Rule::ENV_PRODUCTION]),
 +
 +];
 diff --git a/config/media-library.php b/config/media-library.php
@@ -202,7 +214,7 @@ new file mode 100644
 +     * The maximum file size of an item in bytes.
 +     * Adding a larger file will result in an exception.
 +     */
-+    'max_file_size' => 1024 * 1024 * 10, // 10MB
++    'max_file_size' => 1_024 * 1_024 * 10, // 10MB
 +
 +    /*
 +     * Uploads whose file name contains any of these extensions will be rejected.
@@ -565,7 +577,7 @@ diff --git a/tests/Integration/Listeners/SetMediaDimensionsTest.php b/tests/Inte
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Listeners/SetMediaDimensionsTest.php
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,23 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -575,8 +587,7 @@ new file mode 100644
 +
 +it('only runs for supported mime types', function (): void {
 +    $model = TestModel::query()->create();
-+    $media = $model->addMedia(UploadedFile::fake()->image('image.gif'))
-+        ->toMediaCollection();
++    $media = $model->addMedia(UploadedFile::fake()->image('image.gif'))->toMediaCollection();
 +
 +    expect($media->getCustomProperty('height'))->toBeNull()
 +        ->and($media->getCustomProperty('width'))->toBeNull();
@@ -594,7 +605,7 @@ diff --git a/tests/Integration/Support/Media/FileNamerTest.php b/tests/Integrati
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Support/Media/FileNamerTest.php
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,18 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -608,9 +619,7 @@ new file mode 100644
 +    Storage::fake('public');
 +
 +    $model = TestModel::query()->create();
-+
-+    $media = $model->addMedia(UploadedFile::fake()->image('photo.png'))
-+        ->toMediaCollection();
++    $media = $model->addMedia(UploadedFile::fake()->image('photo.png'))->toMediaCollection();
 +
 +    expect(Str::isUuid(pathinfo($media->file_name, PATHINFO_FILENAME)))->toBeTrue()
 +        ->and(pathinfo($media->file_name, PATHINFO_EXTENSION))->toBe('png');
@@ -619,7 +628,7 @@ diff --git a/tests/Integration/Support/Media/PathGeneratorTest.php b/tests/Integ
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Support/Media/PathGeneratorTest.php
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,30 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -633,10 +642,7 @@ new file mode 100644
 +    Storage::fake('public');
 +
 +    $model = TestModel::query()->create();
-+
-+    $media = $model->addMedia(UploadedFile::fake()->image('image.jpg'))
-+        ->toMediaCollection();
-+
++    $media = $model->addMedia(UploadedFile::fake()->image('image.jpg'))->toMediaCollection();
 +    $path = $media->getPathRelativeToRoot();
 +
 +    expect(Str::startsWith($path, $media->uuid.'/'))->toBeTrue();
@@ -648,10 +654,7 @@ new file mode 100644
 +    config(['media-library.prefix' => 'uploads']);
 +
 +    $model = TestModel::query()->create();
-+
-+    $media = $model->addMedia(UploadedFile::fake()->image('image.jpg'))
-+        ->toMediaCollection();
-+
++    $media = $model->addMedia(UploadedFile::fake()->image('image.jpg'))->toMediaCollection();
 +    $path = $media->getPathRelativeToRoot();
 +
 +    expect(Str::startsWith($path, 'uploads/'.$media->uuid.'/'))->toBeTrue();

@@ -34,7 +34,10 @@ it('keeps child bindings scoped to their parent', function (): void {
     $child = TestModel::query()->create(['parent_id' => $parent->id]);
 
     Route::middleware(SubstituteBindings::class)
-        ->get('/_test/{model}/children/{child}', fn (TestModel $model, TestModel $child): string => $child->sqid)
+        ->get(
+            '/_test/{model}/children/{child}',
+            fn (TestModel $model, TestModel $child): string => $child->sqid,
+        )
         ->scopeBindings();
 
     get('/_test/'.$parent->sqid.'/children/'.$child->sqid)->assertOk();

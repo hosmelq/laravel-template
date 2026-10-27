@@ -55,7 +55,7 @@ diff --git a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifySer
 -use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
 +use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
 +use Laravel\Fortify\Features;
-@@ -43,1 +46,36 @@
+@@ -45,1 +48,36 @@
 -
 +
 +        Fortify::loginView(function (): Response {
@@ -118,29 +118,48 @@ diff --git a/bootstrap/app.php b/bootstrap/app.php
 -            ])
 +            ])
 +            ->redirectGuestsTo(fn (): string => route('login'))
-@@ -34,1 +41,21 @@
+@@ -34,1 +41,40 @@
 -        Integration::handles($exceptions);
 +        Integration::handles($exceptions);
 +
-+        $exceptions->render(function (InvalidSignatureException $exception, Request $request): null|RedirectResponse {
-+            if ($request->routeIs('verification.verify')) {
-+                return to_route('verification.notice')->with('verification_warning', EmailVerificationWarning::Expired);
-+            }
-+
-+            return null;
-+        });
-+
-+        $exceptions->render(function (AccessDeniedHttpException $exception, Request $request): null|RedirectResponse {
-+            if ($request->routeIs('verification.verify') && $exception->getPrevious() instanceof AuthorizationException) {
-+                if ($request->user()?->hasVerifiedEmail() === true) {
-+                    return redirect(config()->string('fortify.home'));
++        $exceptions->render(
++            function (
++                InvalidSignatureException $exception,
++                Request $request,
++            ): null|RedirectResponse {
++                if ($request->routeIs('verification.verify')) {
++                    return to_route('verification.notice')->with(
++                        'verification_warning',
++                        EmailVerificationWarning::Expired,
++                    );
 +                }
 +
-+                return to_route('verification.notice')->with('verification_warning', EmailVerificationWarning::OtherAccount);
-+            }
++                return null;
++            },
++        );
 +
-+            return null;
-+        });
++        $exceptions->render(
++            function (
++                AccessDeniedHttpException $exception,
++                Request $request,
++            ): null|RedirectResponse {
++                if (
++                    $request->routeIs('verification.verify')
++                    && $exception->getPrevious() instanceof AuthorizationException
++                ) {
++                    if ($request->user()?->hasVerifiedEmail() === true) {
++                        return redirect(config()->string('fortify.home'));
++                    }
++
++                    return to_route('verification.notice')->with(
++                        'verification_warning',
++                        EmailVerificationWarning::OtherAccount,
++                    );
++                }
++
++                return null;
++            },
++        );
 diff --git a/config/fortify.php b/config/fortify.php
 --- a/config/fortify.php
 +++ b/config/fortify.php
@@ -621,14 +640,16 @@ new file mode 100644
 diff --git a/routes/web.php b/routes/web.php
 --- a/routes/web.php
 +++ b/routes/web.php
-@@ -4,1 +4,2 @@
--
-+
+@@ -5,1 +5,2 @@
+-use Illuminate\Support\Facades\Route;
 +use App\Http\Controllers\EmailConfirmedController;
-@@ -19,1 +20,3 @@
--    Route::middleware('verified')->scopeBindings()->group(function (): void {
-+    Route::middleware('verified')->scopeBindings()->group(function (): void {
-+        Route::get('/email/verified', EmailConfirmedController::class)->name('verification.verified');
++use Illuminate\Support\Facades\Route;
+@@ -17,1 +18,5 @@
+-Route::middleware('auth')->group(function (): void {
++Route::middleware('auth')->group(function (): void {
++    Route::get('/email/verified', EmailConfirmedController::class)
++        ->middleware('verified')
++        ->name('verification.verified');
 +
 diff --git a/tests/Browser/Auth/LoginTest.php b/tests/Browser/Auth/LoginTest.php
 new file mode 100644
@@ -712,7 +733,7 @@ diff --git a/tests/Browser/Auth/PasswordResetTest.php b/tests/Browser/Auth/Passw
 new file mode 100644
 --- /dev/null
 +++ b/tests/Browser/Auth/PasswordResetTest.php
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,69 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -725,7 +746,9 @@ new file mode 100644
 +
 +it('opens password recovery from sign in', function (): void {
 +    visit('/login')->click('Forgot your password?')->assertPathIs('/forgot-password')
-+        ->assertSee('Enter your email to request a password reset link.')->assertNoJavascriptErrors();
++        ->assertSee(
++            'Enter your email to request a password reset link.',
++        )->assertNoJavascriptErrors();
 +});
 +
 +it('shows the sent status after requesting a link', function (): void {
@@ -751,7 +774,9 @@ new file mode 100644
 +    visit('/reset-password/'.$token.'?email='.urlencode($user->email))
 +        ->assertValue('Email', $user->email)->type('New password', 'new-password-123')
 +        ->type('Confirm new password', 'new-password-123')->press('button[type="submit"]')
-+        ->assertPathIs('/login')->assertSee('Your password has been reset.')->assertNoJavascriptErrors();
++        ->assertPathIs('/login')->assertSee(
++            'Your password has been reset.',
++        )->assertNoJavascriptErrors();
 +
 +    expect(Hash::check('new-password-123', $user->refresh()->password))->toBeTrue()
 +        ->and(Password::tokenExists($user, $token))->toBeFalse();
@@ -763,7 +788,9 @@ new file mode 100644
 +
 +    visit('/reset-password/'.$token.'?email='.urlencode($user->email))
 +        ->type('New password', 'new-password-123')->type('Confirm new password', 'other-password')
-+        ->press('button[type="submit"]')->assertSee('The password field confirmation does not match.')
++        ->press('button[type="submit"]')->assertSee(
++            'The password field confirmation does not match.',
++        )
 +        ->assertNoJavascriptErrors();
 +});
 +
@@ -780,7 +807,7 @@ diff --git a/tests/Browser/Auth/RegisterTest.php b/tests/Browser/Auth/RegisterTe
 new file mode 100644
 --- /dev/null
 +++ b/tests/Browser/Auth/RegisterTest.php
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,75 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -817,7 +844,9 @@ new file mode 100644
 +
 +    visit('/register')->type('First name', 'Alex')->type('Last name', 'Smith')
 +        ->type('Email', 'alex@')->type('Password', 'short')->type('Confirm password', 'short')
-+        ->press('button[type="submit"]')->assertSee('The email field must be a valid email address.')
++        ->press('button[type="submit"]')->assertSee(
++            'The email field must be a valid email address.',
++        )
 +        ->assertSee('The password field must be at least 8 characters.')
 +        ->assertValue('First name', 'Alex')->assertValue('Last name', 'Smith')
 +        ->assertValue('Email', 'alex@')->assertValue('Password', 'short')
@@ -858,7 +887,7 @@ diff --git a/tests/Browser/Auth/VerifyEmailTest.php b/tests/Browser/Auth/VerifyE
 new file mode 100644
 --- /dev/null
 +++ b/tests/Browser/Auth/VerifyEmailTest.php
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,74 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -877,8 +906,12 @@ new file mode 100644
 +    Notification::fake();
 +    $user = login(User::factory()->unverified()->createOne(['email' => 'alex@example.com']));
 +
-+    visit('/email/verify')->assertSee('Verify your email')->assertSee('Signed in as alex@example.com')
-+        ->press('Resend link')->assertSee('A new verification link has been sent to alex@example.com.')
++    visit('/email/verify')->assertSee('Verify your email')->assertSee(
++        'Signed in as alex@example.com',
++    )
++        ->press('Resend link')->assertSee(
++            'A new verification link has been sent to alex@example.com.',
++        )
 +        ->assertNoJavascriptErrors();
 +
 +    Notification::assertSentTo($user, VerifyEmail::class);
@@ -891,11 +924,16 @@ new file mode 100644
 +    RateLimiter::shouldReceive('tooManyAttempts')->andReturnTrue();
 +    login(User::factory()->unverified()->createOne());
 +
-+    visit('/email/verify')->press('Resend link')->assertSee('Too many attempts. Try again in a minute.')
++    visit('/email/verify')->press('Resend link')->assertSee(
++        'Too many attempts. Try again in a minute.',
++    )
 +        ->assertEnabled('Resend link')->assertNoJavascriptErrors();
 +});
 +
-+it('shows verification warnings and lets the user sign out', function (EmailVerificationWarning $warning, string $message): void {
++it('shows verification warnings and lets the user sign out', function (
++    EmailVerificationWarning $warning,
++    string $message,
++): void {
 +    login(User::factory()->unverified()->createOne());
 +    withSession(['verification_warning' => $warning->value]);
 +
@@ -905,7 +943,10 @@ new file mode 100644
 +    assertGuest();
 +})->with([
 +    'expired' => [EmailVerificationWarning::Expired, 'This verification link has expired'],
-+    'other account' => [EmailVerificationWarning::OtherAccount, 'This link belongs to another account'],
++    'other account' => [
++        EmailVerificationWarning::OtherAccount,
++        'This link belongs to another account',
++    ],
 +]);
 +
 +it('verifies a signed link and continues home', function (): void {
@@ -925,7 +966,7 @@ diff --git a/tests/Feature/Http/AuthenticationPagesTest.php b/tests/Feature/Http
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/AuthenticationPagesTest.php
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,224 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -944,12 +985,13 @@ new file mode 100644
 +    $response = get('/login');
 +
 +    $response->assertOk()
-+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('auth/Login'));
++        ->assertInertia(
++            fn (AssertableInertia $page): AssertableInertia => $page->component('auth/Login'),
++        );
 +});
 +
 +it('redirects guests to the login page', function (): void {
-+    Route::middleware(['web', 'auth'])
-+        ->get('/_test/protected', fn (): string => 'ok');
++    Route::middleware(['web', 'auth'])->get('/_test/protected', fn (): string => 'ok');
 +
 +    $response = get('/_test/protected');
 +
@@ -962,12 +1004,13 @@ new file mode 100644
 +    $response = get('/email/verify');
 +
 +    $response->assertOk()
-+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('auth/VerifyEmail'));
++        ->assertInertia(
++            fn (AssertableInertia $page): AssertableInertia => $page->component('auth/VerifyEmail'),
++        );
 +});
 +
 +it('sends unverified users to the email verification notice', function (): void {
-+    Route::middleware(['web', 'auth', 'verified'])
-+        ->get('/_test/verified', fn (): string => 'ok');
++    Route::middleware(['web', 'auth', 'verified'])->get('/_test/verified', fn (): string => 'ok');
 +
 +    login(User::factory()->unverified()->createOne());
 +
@@ -1002,14 +1045,17 @@ new file mode 100644
 +})->with(['forgot password' => '/forgot-password', 'login' => '/login']);
 +
 +it('renders registration for guests', function (): void {
-+    get('/register')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-+        ->component('auth/Register'));
++    get('/register')->assertOk()->assertInertia(
++        fn (AssertableInertia $page): AssertableInertia => $page->component('auth/Register'),
++    );
 +});
 +
 +it('renders the forgot password view', function (): void {
-+    get('/forgot-password')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-+        ->component('auth/ForgotPassword')
-+        ->where('status', null));
++    get('/forgot-password')->assertOk()->assertInertia(
++        fn (AssertableInertia $page): AssertableInertia => $page
++            ->component('auth/ForgotPassword')
++            ->where('status', null),
++    );
 +});
 +
 +it('passes the reset token and email to the reset password view', function (): void {
@@ -1022,17 +1068,21 @@ new file mode 100644
 +
 +it('renders a reset password view without an email', function (): void {
 +    get('/reset-password/example-token')->assertOk()
-+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('email', ''));
++        ->assertInertia(
++            fn (AssertableInertia $page): AssertableInertia => $page->where('email', ''),
++        );
 +});
 +
 +it('passes the signed in email and empty verification status', function (): void {
 +    login(User::factory()->unverified()->createOne(['email' => 'alex@example.com']));
 +
-+    get('/email/verify')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-+        ->component('auth/VerifyEmail')
-+        ->where('email', 'alex@example.com')
-+        ->where('status', null)
-+        ->where('warning', null));
++    get('/email/verify')->assertOk()->assertInertia(
++        fn (AssertableInertia $page): AssertableInertia => $page
++            ->component('auth/VerifyEmail')
++            ->where('email', 'alex@example.com')
++            ->where('status', null)
++            ->where('warning', null),
++    );
 +});
 +
 +it('passes verification status and warnings', function (EmailVerificationWarning $warning): void {
@@ -1060,9 +1110,11 @@ new file mode 100644
 +it('renders email confirmation with the signed in first name', function (): void {
 +    login(User::factory()->createOne(['first_name' => 'Alex']));
 +
-+    get('/email/verified')->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-+        ->component('auth/EmailConfirmed')
-+        ->where('firstName', 'Alex'));
++    get('/email/verified')->assertOk()->assertInertia(
++        fn (AssertableInertia $page): AssertableInertia => $page
++            ->component('auth/EmailConfirmed')
++            ->where('firstName', 'Alex'),
++    );
 +});
 +
 +it('redirects a verified email to the confirmation page', function (): void {
@@ -1077,12 +1129,18 @@ new file mode 100644
 +    expect($user->refresh()->hasVerifiedEmail())->toBeTrue();
 +});
 +
-+it('redirects expired and invalid verification signatures to a warning', function (bool $expired): void {
++it('redirects expired and invalid verification signatures to a warning', function (
++    bool $expired,
++): void {
 +    $user = login(User::factory()->unverified()->createOne());
-+    $url = URL::temporarySignedRoute('verification.verify', $expired ? now()->subMinute() : now()->addHour(), [
-+        'hash' => sha1($user->email),
-+        'id' => $user->id,
-+    ]);
++    $url = URL::temporarySignedRoute(
++        'verification.verify',
++        $expired ? now()->subMinute() : now()->addHour(),
++        [
++            'hash' => sha1($user->email),
++            'id' => $user->id,
++        ],
++    );
 +
 +    get($expired ? $url : $url.'tampered')->assertRedirectToRoute('verification.notice')
 +        ->assertSessionHas('verification_warning', EmailVerificationWarning::Expired->value);
@@ -1113,7 +1171,9 @@ new file mode 100644
 +    get($url)->assertRedirect('/')->assertSessionMissing('verification_warning');
 +});
 +
-+it('keeps unrelated signature and authorization errors forbidden', function (string $exception): void {
++it('keeps unrelated signature and authorization errors forbidden', function (
++    string $exception,
++): void {
 +    Route::middleware('web')->get('/_test/forbidden', function () use ($exception): never {
 +        throw new $exception();
 +    });

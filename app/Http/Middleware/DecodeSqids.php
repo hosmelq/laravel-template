@@ -13,9 +13,7 @@ class DecodeSqids
 {
     private const int INVALID_ID = 0;
 
-    public function __construct(private readonly Sqid $sqid)
-    {
-    }
+    public function __construct(private readonly Sqid $sqid) {}
 
     /**
      * @param Closure(Request): Response $next

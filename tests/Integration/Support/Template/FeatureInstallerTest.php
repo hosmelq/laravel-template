@@ -13,12 +13,14 @@ it('applies every selected patch as one group and removes the installer after ag
     $commands = [];
     $operations = [];
 
-    Process::fake(function (PendingProcess $process) use (&$commands, &$operations): FakeProcessResult {
-        $commands[] = $process->command;
-        $operations[] = 'process:'.implode(' ', $process->command);
+    Process::fake(
+        function (PendingProcess $process) use (&$commands, &$operations): FakeProcessResult {
+            $commands[] = $process->command;
+            $operations[] = 'process:'.implode(' ', $process->command);
 
-        return Process::result();
-    });
+            return Process::result();
+        },
+    );
 
     $files = $this->mock(Filesystem::class);
     $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
@@ -41,12 +43,8 @@ it('applies every selected patch as one group and removes the installer after ag
 
             return true;
         });
-    $files->expects('isDirectory')
-        ->times(6)
-        ->andReturnTrue();
-    $files->expects('isEmptyDirectory')
-        ->times(6)
-        ->andReturnTrue();
+    $files->expects('isDirectory')->times(6)->andReturnTrue();
+    $files->expects('isEmptyDirectory')->times(6)->andReturnTrue();
     $files->expects('deleteDirectory')
         ->with(
             Mockery::on(fn (string $directory): bool => in_array($directory, [
@@ -56,7 +54,7 @@ it('applies every selected patch as one group and removes the installer after ag
                 base_path('scripts'),
                 base_path('tests/Feature/Console'),
                 base_path('tests/Integration/Support/Template'),
-            ], true))
+            ], true)),
         )
         ->times(6)
         ->andReturnTrue();
@@ -205,19 +203,10 @@ it('preserves non-empty directories when removing the installer', function (): v
     $files = $this->mock(Filesystem::class);
     $files->expects('isFile')->with(base_path('package.json'))->andReturnFalse();
     $files->expects('isFile')->with(base_path('.railway/package.json'))->andReturnFalse();
-    $files->expects('delete')
-        ->once()
-        ->andReturnTrue();
-    $files->expects('isDirectory')
-        ->times(6)
-        ->andReturnTrue();
-    $files->expects('isEmptyDirectory')
-        ->times(6)
-        ->andReturnFalse();
-    $files->expects('deleteDirectory')
-        ->with(resource_path('template'))
-        ->once()
-        ->andReturnTrue();
+    $files->expects('delete')->once()->andReturnTrue();
+    $files->expects('isDirectory')->times(6)->andReturnTrue();
+    $files->expects('isEmptyDirectory')->times(6)->andReturnFalse();
+    $files->expects('deleteDirectory')->with(resource_path('template'))->once()->andReturnTrue();
 
     resolve(FeatureInstaller::class)->install([
         TemplateFeature::Health,
@@ -229,7 +218,7 @@ it('preserves the installer when agent setup fails', function (): void {
         if ($process->command === ['mise', 'run', 'setup:agent']) {
             return Process::result(
                 errorOutput: 'Agent setup failed.',
-                exitCode: 1
+                exitCode: 1,
             );
         }
 
@@ -244,7 +233,10 @@ it('preserves the installer when agent setup fails', function (): void {
 
     expect(fn () => resolve(FeatureInstaller::class)->install([
         TemplateFeature::Health,
-    ]))->toThrow(RuntimeException::class, "The agent setup could not be completed.\nAgent setup failed.");
+    ]))->toThrow(
+        RuntimeException::class,
+        "The agent setup could not be completed.\nAgent setup failed.",
+    );
 });
 
 it('does not add unselected features to organizations', function (): void {
@@ -317,5 +309,8 @@ it('preserves the installer when the frontend build fails', function (): void {
     $files->shouldNotReceive('deleteDirectory');
 
     expect(fn () => resolve(FeatureInstaller::class)->install([TemplateFeature::Frontend]))
-        ->toThrow(RuntimeException::class, "The frontend assets could not be built.\nBuild failed.");
+        ->toThrow(
+            RuntimeException::class,
+            "The frontend assets could not be built.\nBuild failed.",
+        );
 });

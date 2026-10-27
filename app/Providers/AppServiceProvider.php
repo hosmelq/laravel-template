@@ -81,26 +81,28 @@ class AppServiceProvider extends ServiceProvider
 
         if ($this->app->isProduction()) {
             Model::handleDiscardedAttributeViolationUsing(
-                Integration::discardedAttributeViolationReporter()
+                Integration::discardedAttributeViolationReporter(),
             );
             Model::handleLazyLoadingViolationUsing(
-                Integration::lazyLoadingViolationReporter()
+                Integration::lazyLoadingViolationReporter(),
             );
             Model::handleMissingAttributeViolationUsing(
-                Integration::missingAttributeViolationReporter()
+                Integration::missingAttributeViolationReporter(),
             );
         }
     }
 
     private function configurePasswordValidation(): void
     {
-        Password::defaults(fn () => app()->isProduction() ? Password::min(8)->uncompromised() : Password::min(8));
+        Password::defaults(
+            fn () => app()->isProduction() ? Password::min(8)->uncompromised() : Password::min(8),
+        );
     }
 
     private function configureRateLimiters(): void
     {
         RateLimiter::for('api', function (Request $request): Limit {
-            return Limit::perMinute(1000)->by($request->user()->id ?? $request->ip());
+            return Limit::perMinute(1_000)->by($request->user()->id ?? $request->ip());
         });
     }
 

@@ -10,9 +10,7 @@ use Tests\Support\TemplateFeatureCombinations;
 
 it('installs every selected prompt feature combination', function (array $selectedFeatures): void {
     $installer = $this->mock(FeatureInstaller::class);
-    $installer->expects('pendingFeatures')
-        ->with($selectedFeatures)
-        ->andReturn([]);
+    $installer->expects('pendingFeatures')->with($selectedFeatures)->andReturn([]);
 
     artisan('template:install')
         ->expectsChoice(
@@ -32,7 +30,7 @@ it('installs every selected prompt feature combination', function (array $select
                 'Organizations',
                 'Railway',
             ],
-            strict: true
+            strict: true,
         )
         ->expectsOutputToContain('The selected features are already installed.')
         ->assertSuccessful();

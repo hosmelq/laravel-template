@@ -5,6 +5,12 @@
 
 - Alphabetize every orderable element and structure at every level. Preserve non-alphabetical order whenever it has a semantic or functional purpose, even if reordering would not change runtime behavior.
 
+=== .ai/coding-standard rules ===
+
+# Coding Standard
+
+- If you have modified any PHP files, run `composer rector -- {files}` and then `composer ecs -- {files}` before finalizing changes. Rector runs first so ECS lays out its changes.
+
 === .ai/laravel-project-patterns rules ===
 
 # Laravel Project Patterns
@@ -156,13 +162,6 @@ This application uses Laravel Octane, a long-running PHP server. The application
 - Prefer scoped bindings (`$this->app->scoped()`) over singletons for per-request services.
 
 When working on Octane-specific features (concurrency, shared tables, memory, driver configuration, testing), invoke `octane-development` for detailed rules.
-
-=== pint/core rules ===
-
-# Laravel Pint Code Formatter
-
-- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
-- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
 
 === pest/core rules ===
 

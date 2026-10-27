@@ -2,7 +2,7 @@ diff --git a/app/Actions/Fortify/CreateNewUser.php b/app/Actions/Fortify/CreateN
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Fortify/CreateNewUser.php
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,54 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -51,10 +51,7 @@ new file mode 100644
 +                'password' => Hash::make($validated->string('password')->toString()),
 +            ]);
 +
-+            audit_log(AuditLogEvent::UserCreated)
-+                ->actor($user)
-+                ->target($user)
-+                ->record();
++            audit_log(AuditLogEvent::UserCreated)->actor($user)->target($user)->record();
 +
 +            return $user;
 +        });
@@ -156,7 +153,7 @@ diff --git a/app/Actions/Fortify/UpdateUserProfileInformation.php b/app/Actions/
 new file mode 100644
 --- /dev/null
 +++ b/app/Actions/Fortify/UpdateUserProfileInformation.php
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,76 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -203,7 +200,10 @@ new file mode 100644
 +
 +        if ($user->wasChanged(['email', 'email_verified_at', 'first_name', 'last_name'])) {
 +            /** @var array<string, null|bool|float|int|string> $after */
-+            $after = Arr::only($user->getChanges(), ['email', 'email_verified_at', 'first_name', 'last_name']);
++            $after = Arr::only(
++                $user->getChanges(),
++                ['email', 'email_verified_at', 'first_name', 'last_name'],
++            );
 +            /** @var array<string, null|bool|float|int|string> $before */
 +            $before = Arr::only($user->getPrevious(), array_keys($after));
 +
@@ -234,7 +234,7 @@ diff --git a/app/Listeners/RecordFailedLogin.php b/app/Listeners/RecordFailedLog
 new file mode 100644
 --- /dev/null
 +++ b/app/Listeners/RecordFailedLogin.php
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,29 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -253,11 +253,12 @@ new file mode 100644
 +{
 +    public function handle(Failed $event): void
 +    {
-+        $log = audit_log(AuditLogEvent::AuthLoginFailed)->metadata(['email' => Arr::string($event->credentials, Fortify::username(), '')]);
++        $log = audit_log(AuditLogEvent::AuthLoginFailed)->metadata([
++            'email' => Arr::string($event->credentials, Fortify::username(), ''),
++        ]);
 +
 +        if ($event->user instanceof User) {
-+            $log->actor($event->user)
-+                ->target($event->user);
++            $log->actor($event->user)->target($event->user);
 +        }
 +
 +        $log->record();
@@ -293,7 +294,7 @@ diff --git a/app/Listeners/RecordLogin.php b/app/Listeners/RecordLogin.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Listeners/RecordLogin.php
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,23 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -314,17 +315,14 @@ new file mode 100644
 +            return;
 +        }
 +
-+        audit_log(AuditLogEvent::AuthLogin)
-+            ->actor($event->user)
-+            ->target($event->user)
-+            ->record();
++        audit_log(AuditLogEvent::AuthLogin)->actor($event->user)->target($event->user)->record();
 +    }
 +}
 diff --git a/app/Listeners/RecordLogout.php b/app/Listeners/RecordLogout.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Listeners/RecordLogout.php
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,23 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -345,17 +343,14 @@ new file mode 100644
 +            return;
 +        }
 +
-+        audit_log(AuditLogEvent::AuthLogout)
-+            ->actor($event->user)
-+            ->target($event->user)
-+            ->record();
++        audit_log(AuditLogEvent::AuthLogout)->actor($event->user)->target($event->user)->record();
 +    }
 +}
 diff --git a/app/Listeners/RecordVerifiedEmail.php b/app/Listeners/RecordVerifiedEmail.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Listeners/RecordVerifiedEmail.php
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,35 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -388,16 +383,14 @@ new file mode 100644
 +            $log->changes(before: $before, after: $after);
 +        }
 +
-+        $log->actor($event->user)
-+            ->target($event->user)
-+            ->record();
++        $log->actor($event->user)->target($event->user)->record();
 +    }
 +}
 diff --git a/app/Providers/FortifyServiceProvider.php b/app/Providers/FortifyServiceProvider.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Providers/FortifyServiceProvider.php
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,83 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -429,7 +422,9 @@ new file mode 100644
 +    public function boot(): void
 +    {
 +        Fortify::createUsersUsing(CreateNewUser::class);
-+        Fortify::redirectUserForTwoFactorAuthenticationUsing(RedirectIfTwoFactorAuthenticatable::class);
++        Fortify::redirectUserForTwoFactorAuthenticationUsing(
++            RedirectIfTwoFactorAuthenticatable::class,
++        );
 +        Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
 +        Fortify::updateUserPasswordsUsing(UpdateUserPassword::class);
 +        Fortify::updateUserProfileInformationUsing(UpdateUserProfileInformation::class);
@@ -445,21 +440,23 @@ new file mode 100644
 +            $throttleKey = Str::transliterate(sprintf(
 +                '%s|%s',
 +                Str::lower((string) $request->string(Fortify::username())),
-+                $request->ip()
++                $request->ip(),
 +            ));
 +
-+            return Limit::perMinute(5)->by($throttleKey)->response(function (Request $request, array $headers): never {
-+                $seconds = Arr::integer($headers, 'Retry-After');
++            return Limit::perMinute(5)->by($throttleKey)->response(
++                function (Request $request, array $headers): never {
++                    $seconds = Arr::integer($headers, 'Retry-After');
 +
-+                Event::dispatch(new Lockout($request));
++                    Event::dispatch(new Lockout($request));
 +
-+                throw ValidationException::withMessages([
-+                    Fortify::username() => [Lang::string('auth.throttle', [
-+                        'minutes' => ceil($seconds / 60),
-+                        'seconds' => $seconds,
-+                    ])],
-+                ])->status(429);
-+            });
++                    throw ValidationException::withMessages([
++                        Fortify::username() => [Lang::string('auth.throttle', [
++                            'minutes' => ceil($seconds / 60),
++                            'seconds' => $seconds,
++                        ])],
++                    ])->status(429);
++                },
++            );
 +        });
 +
 +        RateLimiter::for('two-factor', function (Request $request) {
@@ -678,7 +675,7 @@ new file mode 100644
 +    'passkeys' => [
 +        'relying_party_id' => parse_url((string) config('app.url'), PHP_URL_HOST),
 +        'allowed_origins' => [config('app.url')],
-+        'timeout' => 60000,
++        'timeout' => 60_000,
 +    ],
 +
 +    /*
@@ -803,7 +800,7 @@ diff --git a/tests/Feature/Http/AuthenticatedSessionControllerTest.php b/tests/F
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/AuthenticatedSessionControllerTest.php
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,103 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -828,11 +825,13 @@ new file mode 100644
 +    ])->assertUnprocessable()->assertJsonValidationErrors('email');
 +
 +    assertGuest();
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLoginFailed->value
-+        && $log->actor->id === (string) $user->id
-+        && $log->metadata === ['email' => $user->email]
-+        && $log->targets[0]->id === (string) $user->id
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLoginFailed->value
++            && $log->actor->id === (string) $user->id
++            && $log->metadata === ['email' => $user->email]
++            && $log->targets[0]->id === (string) $user->id
++            && $log->tenantId === '',
++    );
 +});
 +
 +it('returns a localized 429 after five attempts and allows login after the limit expires', function (): void {
@@ -855,10 +854,12 @@ new file mode 100644
 +    ]);
 +
 +    assertGuest();
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLockout->value
-+        && mb_strtolower($log->metadata['email']) === $user->email
-+        && $log->targets === []
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLockout->value
++            && mb_strtolower($log->metadata['email']) === $user->email
++            && $log->targets === []
++            && $log->tenantId === '',
++    );
 +    AuditLog::assertRecordedTimes(AuditLogEvent::AuthLoginFailed, 5);
 +
 +    travel(61)->seconds();
@@ -881,10 +882,12 @@ new file mode 100644
 +    ])->assertOk()->assertExactJson(['two_factor' => false]);
 +
 +    assertAuthenticatedAs($user);
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLogin->value
-+        && $log->actor->id === (string) $user->id
-+        && $log->targets[0]->id === (string) $user->id
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLogin->value
++            && $log->actor->id === (string) $user->id
++            && $log->targets[0]->id === (string) $user->id
++            && $log->tenantId === '',
++    );
 +});
 +
 +it('logs out the authenticated user and records the logout', function (): void {
@@ -894,16 +897,18 @@ new file mode 100644
 +    postJson(route('logout'))->assertNoContent();
 +
 +    assertGuest();
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLogout->value
-+        && $log->actor->id === (string) $user->id
-+        && $log->targets[0]->id === (string) $user->id
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLogout->value
++            && $log->actor->id === (string) $user->id
++            && $log->targets[0]->id === (string) $user->id
++            && $log->tenantId === '',
++    );
 +});
 diff --git a/tests/Feature/Http/EmailVerificationTest.php b/tests/Feature/Http/EmailVerificationTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/EmailVerificationTest.php
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,88 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -934,13 +939,17 @@ new file mode 100644
 +
 +    postJson(route('verification.send'))->assertStatus(202);
 +
-+    Notification::assertSentTo($user, VerifyEmail::class, function (VerifyEmail $notification) use ($user): bool {
-+        $url = $notification->toMail($user)->actionUrl;
++    Notification::assertSentTo(
++        $user,
++        VerifyEmail::class,
++        function (VerifyEmail $notification) use ($user): bool {
++            $url = $notification->toMail($user)->actionUrl;
 +
-+        expect($url)->toContain('/email/verify/'.$user->id.'/'.sha1($user->email));
++            expect($url)->toContain('/email/verify/'.$user->id.'/'.sha1($user->email));
 +
-+        return URL::hasValidSignature(Request::create($url));
-+    });
++            return URL::hasValidSignature(Request::create($url));
++        },
++    );
 +});
 +
 +it('returns a localized 429 after six verification notifications', function (): void {
@@ -979,18 +988,20 @@ new file mode 100644
 +    getJson($url)->assertNoContent();
 +
 +    expect($user->refresh()->hasVerifiedEmail())->toBeTrue();
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthEmailVerified->value
-+        && $log->actor->id === (string) $user->id
-+        && $log->changes?->before === ['email_verified_at' => null]
-+        && $log->changes->after === ['email_verified_at' => now()->format('Y-m-d H:i:s')]
-+        && $log->targets[0]->id === (string) $user->id
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthEmailVerified->value
++            && $log->actor->id === (string) $user->id
++            && $log->changes?->before === ['email_verified_at' => null]
++            && $log->changes->after === ['email_verified_at' => now()->format('Y-m-d H:i:s')]
++            && $log->targets[0]->id === (string) $user->id
++            && $log->tenantId === '',
++    );
 +});
 diff --git a/tests/Feature/Http/PasswordResetTest.php b/tests/Feature/Http/PasswordResetTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Http/PasswordResetTest.php
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,96 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1023,12 +1034,19 @@ new file mode 100644
 +        ->assertOk()->assertExactJson(['message' => 'We have emailed your password reset link.']);
 +
 +    expect(Route::has('password.reset'))->toBeFalse();
-+    Notification::assertSentTo($user, ResetPassword::class, function (ResetPassword $notification) use ($user): bool {
-+        expect($notification->toMail($user)->actionUrl)
-+            ->toBe(url('/reset-password/'.$notification->token).'?email=reset%2Btest%40example.com');
++    Notification::assertSentTo(
++        $user,
++        ResetPassword::class,
++        function (ResetPassword $notification) use ($user): bool {
++            expect($notification->toMail($user)->actionUrl)
++                ->toBe(
++                    url('/reset-password/'.$notification->token)
++                        .'?email=reset%2Btest%40example.com',
++                );
 +
-+        return Password::tokenExists($user, $notification->token);
-+    });
++            return Password::tokenExists($user, $notification->token);
++        },
++    );
 +});
 +
 +it('throttles repeated reset notifications with 422', function (): void {
@@ -1037,12 +1055,16 @@ new file mode 100644
 +    postJson(route('password.email'), ['email' => $user->email])->assertOk();
 +
 +    postJson(route('password.email'), ['email' => $user->email])
-+        ->assertUnprocessable()->assertJsonValidationErrors(['email' => 'Wait a moment before trying again.']);
++        ->assertUnprocessable()->assertJsonValidationErrors([
++            'email' => 'Wait a moment before trying again.',
++        ]);
 +
 +    Notification::assertSentToTimes($user, ResetPassword::class, 1);
 +});
 +
-+it('rejects an invalid or expired reset token with 422 without changing the password', function (bool $expired): void {
++it('rejects an invalid or expired reset token with 422 without changing the password', function (
++    bool $expired,
++): void {
 +    $user = User::factory()->createOne();
 +    $token = $expired ? Password::createToken($user) : 'invalid-token';
 +
@@ -1080,7 +1102,7 @@ diff --git a/tests/Feature/Listeners/AuthenticationAuditLogTest.php b/tests/Feat
 new file mode 100644
 --- /dev/null
 +++ b/tests/Feature/Listeners/AuthenticationAuditLogTest.php
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,66 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1100,12 +1122,16 @@ new file mode 100644
 +it('records failed login metadata when the account does not exist', function (): void {
 +    AuditLog::fake();
 +
-+    Event::dispatch(new Failed('web', null, ['email' => 'missing@example.com', 'password' => 'secret']));
++    Event::dispatch(
++        new Failed('web', null, ['email' => 'missing@example.com', 'password' => 'secret']),
++    );
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLoginFailed->value
-+        && $log->metadata === ['email' => 'missing@example.com']
-+        && $log->targets === []
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthLoginFailed->value
++            && $log->metadata === ['email' => 'missing@example.com']
++            && $log->targets === []
++            && $log->tenantId === '',
++    );
 +});
 +
 +it('ignores authentication events for unsupported users', function (string $event): void {
@@ -1135,17 +1161,19 @@ new file mode 100644
 +
 +    Event::dispatch(new Verified($user));
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthEmailVerified->value
-+        && $log->actor->id === (string) $user->id
-+        && ! $log->changes instanceof AuditLogChangesData
-+        && $log->targets[0]->id === (string) $user->id
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::AuthEmailVerified->value
++            && $log->actor->id === (string) $user->id
++            && ! $log->changes instanceof AuditLogChangesData
++            && $log->targets[0]->id === (string) $user->id
++            && $log->tenantId === '',
++    );
 +});
 diff --git a/tests/Integration/Actions/CreateNewUserTest.php b/tests/Integration/Actions/CreateNewUserTest.php
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/CreateNewUserTest.php
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,54 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1179,10 +1207,12 @@ new file mode 100644
 +    ]);
 +
 +    expect(Hash::check('new-password', $user->password))->toBeTrue();
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::UserCreated->value
-+        && $log->actor->id === (string) $user->id
-+        && $log->targets[0]->id === (string) $user->id
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::UserCreated->value
++            && $log->actor->id === (string) $user->id
++            && $log->targets[0]->id === (string) $user->id
++            && $log->tenantId === '',
++    );
 +});
 +
 +it('rejects unvalidated registration input before persistence', function (): void {
@@ -1194,8 +1224,7 @@ new file mode 100644
 +        'last_name' => 123,
 +        'password' => 'new-password',
 +        'password_confirmation' => 'new-password',
-+    ]))->toThrow(ValidationException::class)
-+        ->and(User::query()->count())->toBe(0);
++    ]))->toThrow(ValidationException::class)->and(User::query()->count())->toBe(0);
 +
 +    AuditLog::assertNothingRecorded();
 +});
@@ -1262,7 +1291,7 @@ diff --git a/tests/Integration/Actions/UpdateUserProfileInformationTest.php b/te
 new file mode 100644
 --- /dev/null
 +++ b/tests/Integration/Actions/UpdateUserProfileInformationTest.php
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,176 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1285,7 +1314,10 @@ new file mode 100644
 +
 +    expect(fn () => resolve(UpdateUserProfileInformation::class)->update($user, $data))
 +        ->toThrow(function (ValidationException $exception) use ($expected): void {
-+            $messages = Arr::only($exception->validator->errors()->messages(), array_keys($expected));
++            $messages = Arr::only(
++                $exception->validator->errors()->messages(),
++                array_keys($expected),
++            );
 +
 +            expect($exception->errorBag)
 +                ->toBe('updateProfileInformation')
@@ -1367,27 +1399,30 @@ new file mode 100644
 +        'last_name' => 'Doe',
 +    ]);
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::UserUpdated->value
-+        && $log->actor->id === (string) $user->id
-+        && $log->changes?->before === [
-+            'email' => 'old@example.com',
-+            'email_verified_at' => now()->format('Y-m-d H:i:s'),
-+            'first_name' => 'Old',
-+            'last_name' => 'Name',
-+        ]
-+        && $log->changes->after === [
-+            'email' => 'new@example.com',
-+            'email_verified_at' => null,
-+            'first_name' => 'Jane',
-+            'last_name' => 'Doe',
-+        ]
-+        && $log->targets[0]->id === (string) $user->id
-+        && $log->tenantId === '');
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::UserUpdated->value
++            && $log->actor->id === (string) $user->id
++            && $log->changes?->before === [
++                'email' => 'old@example.com',
++                'email_verified_at' => now()->format('Y-m-d H:i:s'),
++                'first_name' => 'Old',
++                'last_name' => 'Name',
++            ]
++            && $log->changes->after === [
++                'email' => 'new@example.com',
++                'email_verified_at' => null,
++                'first_name' => 'Jane',
++                'last_name' => 'Doe',
++            ]
++            && $log->targets[0]->id === (string) $user->id
++            && $log->tenantId === '',
++    );
 +
 +    Notification::assertSentTo(
 +        $user,
 +        VerifyEmail::class,
-+        fn (VerifyEmail $notification): bool => str_contains((string) $notification->toMail($user)->actionUrl, '/email/verify/'),
++        fn (VerifyEmail $notification): bool
++            => str_contains((string) $notification->toMail($user)->actionUrl, '/email/verify/'),
 +    );
 +});
 +
@@ -1412,9 +1447,11 @@ new file mode 100644
 +        ->first_name->toBe('New')
 +        ->last_name->toBe('Name');
 +
-+    AuditLog::assertRecorded(fn (AuditLogData $log): bool => $log->event === AuditLogEvent::UserUpdated->value
-+        && $log->changes?->before === ['first_name' => 'Old']
-+        && $log->changes->after === ['first_name' => 'New']);
++    AuditLog::assertRecorded(
++        fn (AuditLogData $log): bool => $log->event === AuditLogEvent::UserUpdated->value
++            && $log->changes?->before === ['first_name' => 'Old']
++            && $log->changes->after === ['first_name' => 'New'],
++    );
 +});
 +
 +it('does not record a profile update when the input has no changes', function (): void {

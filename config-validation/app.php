@@ -14,7 +14,9 @@ return [
         'required',
         'string',
         function (string $attribute, string $value, Closure $fail): void {
-            $key = Str::startsWith($value, 'base64:') ? Str::fromBase64(Str::after($value, 'base64:'), strict: true) : $value;
+            $key = Str::startsWith($value, 'base64:')
+                ? Str::fromBase64(Str::after($value, 'base64:'), strict: true)
+                : $value;
 
             if ($key === false || ! Encrypter::supported($key, config()->string('app.cipher'))) {
                 $fail('The :attribute cannot initialize encryption with the configured cipher.');

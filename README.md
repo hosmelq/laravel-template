@@ -98,7 +98,7 @@ nub run build
 
 ## Checks and CI
 
-CI runs on `main` only. Before each push, Lefthook runs `mise run push:check` (tests, PHPStan, Pint, and Rector). To sign off a pull request, run the same checks as CI locally with:
+CI runs on `main` only. Before each push, Lefthook runs `mise run push:check` (tests, ECS, PHPStan, and Rector). To sign off a pull request, run the same checks as CI locally with:
 
 ```bash
 mise run signoff
