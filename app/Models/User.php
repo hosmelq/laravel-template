@@ -45,6 +45,7 @@ class User extends Authenticatable implements FilamentUser, HasAuditLogIdentity,
     use HasSqid;
     use Notifiable;
 
+    #[Override]
     public function auditLogIdentity(): AuditLogIdentity
     {
         return new AuditLogIdentity(
@@ -54,6 +55,7 @@ class User extends Authenticatable implements FilamentUser, HasAuditLogIdentity,
         );
     }
 
+    #[Override]
     public function canAccessPanel(Panel $panel): bool
     {
         return $this->isAdmin();

@@ -653,13 +653,14 @@ diff --git a/app/Providers/TypeScriptTransformerServiceProvider.php b/app/Provid
 new file mode 100644
 --- /dev/null
 +++ b/app/Providers/TypeScriptTransformerServiceProvider.php
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,27 @@
 +<?php
 +
 +declare(strict_types=1);
 +
 +namespace App\Providers;
 +
++use Override;
 +use Spatie\LaravelTypeScriptTransformer\TypeScriptTransformerApplicationServiceProvider as BaseTypeScriptTransformerServiceProvider;
 +use Spatie\TypeScriptTransformer\Transformers\EnumTransformer;
 +use Spatie\TypeScriptTransformer\TypeScriptTransformerConfigFactory;
@@ -670,6 +671,7 @@ new file mode 100644
 +    /**
 +     * Generate PHP enums as TypeScript union types for the frontend.
 +     */
++    #[Override]
 +    protected function configure(TypeScriptTransformerConfigFactory $config): void
 +    {
 +        $config

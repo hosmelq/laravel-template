@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ed893d63a1775744d639b8a38f72104d",
+    "content-hash": "256922216055a7241fe276c02a9b8e59",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -11582,16 +11582,16 @@
         },
         {
             "name": "hosmelq/php-coding-standard",
-            "version": "v1.1.0",
+            "version": "v1.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/hosmelq/php-coding-standard.git",
-                "reference": "ac82dee72bfae55b77d75b72a378febf5b719040"
+                "reference": "a31f1bdc5457d4f224d95d5b0bd76f359c3aaa93"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/hosmelq/php-coding-standard/zipball/ac82dee72bfae55b77d75b72a378febf5b719040",
-                "reference": "ac82dee72bfae55b77d75b72a378febf5b719040",
+                "url": "https://api.github.com/repos/hosmelq/php-coding-standard/zipball/a31f1bdc5457d4f224d95d5b0bd76f359c3aaa93",
+                "reference": "a31f1bdc5457d4f224d95d5b0bd76f359c3aaa93",
                 "shasum": ""
             },
             "require": {
@@ -11661,9 +11661,9 @@
             ],
             "support": {
                 "issues": "https://github.com/hosmelq/php-coding-standard/issues",
-                "source": "https://github.com/hosmelq/php-coding-standard/tree/v1.1.0"
+                "source": "https://github.com/hosmelq/php-coding-standard/tree/v1.3.0"
             },
-            "time": "2026-10-20T18:27:36+00:00"
+            "time": "2026-10-28T01:45:27+00:00"
         },
         {
             "name": "iamcal/sql-parser",

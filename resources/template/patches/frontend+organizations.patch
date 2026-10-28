@@ -86,7 +86,7 @@ diff --git a/app/Http/Controllers/OrganizationController.php b/app/Http/Controll
 new file mode 100644
 --- /dev/null
 +++ b/app/Http/Controllers/OrganizationController.php
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,74 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -108,9 +108,11 @@ new file mode 100644
 +use Illuminate\Support\Facades\Lang;
 +use Inertia\Inertia;
 +use Inertia\Response;
++use Override;
 +
 +class OrganizationController implements HasMiddleware
 +{
++    #[Override]
 +    public static function middleware(): array
 +    {
 +        return [

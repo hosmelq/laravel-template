@@ -522,7 +522,7 @@ diff --git a/app/Models/Invitation.php b/app/Models/Invitation.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Models/Invitation.php
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,97 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -572,6 +572,7 @@ new file mode 100644
 +            ->first();
 +    }
 +
++    #[Override]
 +    public function auditLogIdentity(): AuditLogIdentity
 +    {
 +        return new AuditLogIdentity(
@@ -642,7 +643,7 @@ diff --git a/app/Models/Organization.php b/app/Models/Organization.php
 new file mode 100644
 --- /dev/null
 +++ b/app/Models/Organization.php
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,68 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -660,6 +661,7 @@ new file mode 100644
 +use Illuminate\Database\Eloquent\Model;
 +use Illuminate\Database\Eloquent\Relations\BelongsTo;
 +use Illuminate\Database\Eloquent\Relations\BelongsToMany;
++use Override;
 +use Spatie\Sluggable\Attributes\Sluggable;
 +
 +/**
@@ -682,6 +684,7 @@ new file mode 100644
 +
 +    use HasSqid;
 +
++    #[Override]
 +    public function auditLogIdentity(): AuditLogIdentity
 +    {
 +        return new AuditLogIdentity(
@@ -1157,7 +1160,7 @@ diff --git a/database/factories/InvitationFactory.php b/database/factories/Invit
 new file mode 100644
 --- /dev/null
 +++ b/database/factories/InvitationFactory.php
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,62 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1169,6 +1172,7 @@ new file mode 100644
 +use App\Models\Organization;
 +use Illuminate\Database\Eloquent\Factories\Factory;
 +use Illuminate\Support\Str;
++use Override;
 +
 +/**
 + * @extends Factory<Invitation>
@@ -1182,6 +1186,7 @@ new file mode 100644
 +        ]);
 +    }
 +
++    #[Override]
 +    public function definition(): array
 +    {
 +        return [
@@ -1222,7 +1227,7 @@ diff --git a/database/factories/OrganizationFactory.php b/database/factories/Org
 new file mode 100644
 --- /dev/null
 +++ b/database/factories/OrganizationFactory.php
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,36 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1233,12 +1238,14 @@ new file mode 100644
 +use App\Models\Organization;
 +use App\Models\User;
 +use Illuminate\Database\Eloquent\Factories\Factory;
++use Override;
 +
 +/**
 + * @extends Factory<Organization>
 + */
 +class OrganizationFactory extends Factory
 +{
++    #[Override]
 +    public function configure(): static
 +    {
 +        return $this->afterCreating(function (Organization $organization): void {
@@ -1246,6 +1253,7 @@ new file mode 100644
 +        });
 +    }
 +
++    #[Override]
 +    public function definition(): array
 +    {
 +        return [
@@ -1354,7 +1362,7 @@ diff --git a/database/migrations/2026_08_28_133759_create_permission_tables.php 
 new file mode 100644
 --- /dev/null
 +++ b/database/migrations/2026_08_28_133759_create_permission_tables.php
-@@ -0,0 +1,191 @@
+@@ -0,0 +1,190 @@
 +<?php
 +
 +declare(strict_types=1);
@@ -1542,8 +1550,7 @@ new file mode 100644
 +                Config::string('permission.cache.store') !== 'default'
 +                    ? Config::string('permission.cache.store')
 +                    : null,
-+            )
-+            ->forget(Config::string('permission.cache.key'));
++            )->forget(Config::string('permission.cache.key'));
 +    }
 +};
 diff --git a/database/migrations/2026_10_10_204904_create_invitations_table.php b/database/migrations/2026_10_10_204904_create_invitations_table.php
